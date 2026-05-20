@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
+import { StructuredToolInterface } from '@langchain/core/tools';
 import { traceable } from 'langsmith/traceable';
 import { SkillsService } from '../skills/skills.service';
 import { McpRegistryService } from '../mcp/mcp-registry.service';
@@ -88,13 +89,14 @@ export class AgentService {
     });
 
     // ── 5. Get MCP tools ─────────────────────────────────────────────────────
-    const tools = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const tools: StructuredToolInterface[] =
+      dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
 
     // ── 6. Create LangGraph ReAct agent ─────────────────────────────────────
     // createReactAgent builds a StateGraph with:
     //   __start__ → call_model → (tool_node | __end__)
     //   tool_node loops back to call_model until no more tool calls
-    const agent = createReactAgent({ llm, tools });
+    const agent = createReactAgent({ llm, tools: tools as any });
 
     // ── 7. Run the agent inside a LangSmith trace ───────────────────────────
     const tracedRun = traceable(
@@ -208,8 +210,9 @@ export class AgentService {
       },
     });
 
-    const tools = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-    const agent = createReactAgent({ llm, tools });
+    const tools: StructuredToolInterface[] =
+      dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const agent = createReactAgent({ llm, tools: tools as any });
 
     let fullContent = '';
     let toolCallCount = 0;
