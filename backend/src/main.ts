@@ -1,3 +1,14 @@
+// ── Noise suppression — must run before any imports that trigger warnings ──
+// The OpenAI SDK warns about Zod .optional() fields in MCP tool schemas via
+// console.warn. These originate from @modelcontextprotocol/sdk internals and
+// do not affect tool calling. Filter them out so the console stays readable.
+const _warn = console.warn.bind(console);
+console.warn = (...args: any[]) => {
+  const msg = args[0];
+  if (typeof msg === 'string' && msg.includes('.optional()') && msg.includes('nullable')) return;
+  _warn(...args);
+};
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { EventEmitter } from 'events';
@@ -6,15 +17,6 @@ import { AppModule } from './app.module';
 // Increase the global EventEmitter limit to prevent MaxListenersExceededWarning
 // caused by LangGraph creating abort listeners on every agent invocation
 EventEmitter.defaultMaxListeners = 50;
-
-// Suppress OpenAI SDK warnings about Zod .optional() fields in MCP tool schemas.
-// These come from @modelcontextprotocol/sdk generating optional input fields —
-// not from our code — and do not affect tool calling behaviour with Ollama or LiteLLM.
-const originalEmit = process.emit.bind(process);
-(process as any).emit = (event: string, ...args: any[]) => {
-  if (event === 'warning' && args[0]?.message?.includes('.optional()')) return false;
-  return originalEmit(event, ...args);
-};
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
