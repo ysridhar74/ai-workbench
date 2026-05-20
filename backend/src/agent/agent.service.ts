@@ -12,12 +12,20 @@ import { ObservabilityService } from '../observability/observability.service';
 import { MemoryService } from '../memory/memory.service';
 import { AgentRequestDto } from './agent.dto';
 
+export interface ToolStep {
+  tool: string;
+  input: unknown;
+  output: string;
+}
+
 export interface AgentResult {
   content: string;
   skill: string;
   model: string;
   toolCallCount: number;
   ragChunksUsed: number;
+  /** Ordered list of every tool the agent called, with its input and output */
+  steps: ToolStep[];
   metrics: {
     inputTokens: number;
     outputTokens: number;
@@ -130,10 +138,30 @@ export class AgentService {
 
     const toolMsgs = msgs.filter((m: any) => m._getType?.() === 'tool');
     const toolCallCount = toolMsgs.length;
-    // Count how many tool calls were search_knowledge_base
     const ragChunksUsed = toolMsgs.filter((m: any) =>
       m.name === 'search_knowledge_base',
     ).length;
+
+    // Build ordered steps: pair each AI tool_call with its tool result message
+    const steps: ToolStep[] = [];
+    for (const msg of msgs) {
+      if (msg._getType?.() !== 'ai') continue;
+      const toolCalls: any[] = msg.tool_calls ?? msg.additional_kwargs?.tool_calls ?? [];
+      for (const tc of toolCalls) {
+        const toolName: string = tc.name ?? tc.function?.name ?? 'unknown';
+        const rawInput = tc.args ?? (() => {
+          try { return JSON.parse(tc.function?.arguments ?? '{}'); } catch { return tc.function?.arguments ?? {}; }
+        })();
+        // Find the corresponding tool result by tool_call_id
+        const resultMsg = toolMsgs.find(
+          (t: any) => t.tool_call_id === tc.id,
+        );
+        const output: string = resultMsg
+          ? (typeof resultMsg.content === 'string' ? resultMsg.content : JSON.stringify(resultMsg.content))
+          : '';
+        steps.push({ tool: toolName, input: rawInput, output });
+      }
+    }
 
     const usageMeta = lastAi?.response_metadata?.usage ?? lastAi?.usage_metadata ?? {};
     const inputTokens: number = usageMeta.input_tokens ?? usageMeta.prompt_tokens ?? 0;
@@ -164,6 +192,7 @@ export class AgentService {
       model,
       toolCallCount,
       ragChunksUsed,
+      steps,
       metrics: {
         ...metrics,
         summary: this.observability.formatMetricsSummary({ ...metrics, model }),
@@ -235,7 +264,9 @@ export class AgentService {
         yield `data: ${JSON.stringify({ type: 'tool_call', tool: event.name, input: event.data?.input })}\n\n`;
       }
       if (event.event === 'on_tool_end') {
-        yield `data: ${JSON.stringify({ type: 'tool_result', tool: event.name })}\n\n`;
+        const rawOutput = event.data?.output;
+        const output = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput ?? '');
+        yield `data: ${JSON.stringify({ type: 'tool_result', tool: event.name, output })}\n\n`;
       }
     }
 
