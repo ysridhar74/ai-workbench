@@ -109,7 +109,7 @@ export class RagService {
 
     try {
       return await this.vectorStore!.similaritySearch(query, topK, {
-        preFilter: { namespace: { $eq: namespace } },
+        preFilter: { namespace: { $eq: namespace } },  // stored at root, not metadata.namespace
       });
     } catch (err) {
       this.logger.warn(`Vector search failed (index may not exist yet): ${err.message}`);
@@ -147,10 +147,7 @@ export class RagService {
 
     const dbName = this.config.get<string>('MONGODB_DB', 'ai_workbench');
     const col = this.mongoClient!.db(dbName).collection('rag_chunks');
-    const result = await col.deleteMany({
-      'metadata.source': source,
-      'metadata.namespace': namespace,
-    });
+    const result = await col.deleteMany({ source, namespace });
     this.logger.log(
       `Deleted ${result.deletedCount} chunk(s) for "${source}" in namespace "${namespace}"`,
     );
