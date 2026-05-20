@@ -107,7 +107,7 @@ export class AgentService {
             new HumanMessage(dto.message),
           ],
         }),
-      { name: `agent:${skillName}`, metadata: { skill: skillName, userId: dto.userId, ragChunksUsed } },
+      { name: `agent:${skillName}`, metadata: { skill: skillName, userId: dto.userId } },
     );
 
     const agentResult = await tracedRun();
