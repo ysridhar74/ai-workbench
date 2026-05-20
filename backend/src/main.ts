@@ -1,6 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { EventEmitter } from 'events';
 import { AppModule } from './app.module';
+
+// Increase the global EventEmitter limit to prevent MaxListenersExceededWarning
+// caused by LangGraph creating abort listeners on every agent invocation
+EventEmitter.defaultMaxListeners = 50;
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

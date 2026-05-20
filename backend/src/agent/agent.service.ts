@@ -48,6 +48,9 @@ function buildLlm(config: ConfigService, model: string, streaming = false): Chat
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
+  // Cache agents by model name so we don't recreate on every request
+  private readonly agentCache = new Map<string, any>();
+  private readonly streamingAgentCache = new Map<string, any>();
 
   constructor(
     private readonly config: ConfigService,
@@ -87,11 +90,14 @@ export class AgentService {
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
-    // ── 3. Build agent ──────────────────────────────────────────────────────
-    const llm = buildLlm(this.config, model);
-    // Use any[] to avoid TypeScript's deep generic instantiation limit on tool types
+    // ── 3. Build agent (cached per model) ──────────────────────────────────
     const tools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-    const agent = createReactAgent({ llm, tools } as any);
+    const cacheKey = `${model}:${tools.length}`;
+    if (!this.agentCache.has(cacheKey)) {
+      const llm = buildLlm(this.config, model);
+      this.agentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
+    }
+    const agent = this.agentCache.get(cacheKey);
 
     // ── 4. Run inside a LangSmith trace ─────────────────────────────────────
     const tracedRun = traceable(
@@ -178,9 +184,13 @@ export class AgentService {
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
-    const llm = buildLlm(this.config, model, true);
     const tools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-    const agent = createReactAgent({ llm, tools } as any);
+    const cacheKey = `${model}:${tools.length}:stream`;
+    if (!this.streamingAgentCache.has(cacheKey)) {
+      const llm = buildLlm(this.config, model, true);
+      this.streamingAgentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
+    }
+    const agent = this.streamingAgentCache.get(cacheKey);
 
     let fullContent = '';
     let toolCallCount = 0;
