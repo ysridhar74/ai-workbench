@@ -6,6 +6,7 @@ import { AgentController } from './agent.controller';
 import { LlmModule } from '../llm/llm.module';
 import { SkillsModule } from '../skills/skills.module';
 import { RagModule } from '../rag/rag.module';
+import { MemoryModule } from '../memory/memory.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { RagModule } from '../rag/rag.module';
     LlmModule,
     SkillsModule,
     RagModule,
+    MemoryModule,
   ],
   providers: [AgentService],
   controllers: [AgentController],

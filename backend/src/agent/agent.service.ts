@@ -9,6 +9,7 @@ import { SkillsService } from '../skills/skills.service';
 import { McpRegistryService } from '../mcp/mcp-registry.service';
 import { RagService } from '../rag/rag.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { MemoryService } from '../memory/memory.service';
 import { AgentRequestDto } from './agent.dto';
 
 export interface AgentResult {
@@ -64,6 +65,7 @@ export class AgentService {
     private readonly mcpRegistry: McpRegistryService,
     private readonly ragService: RagService,
     private readonly observability: ObservabilityService,
+    private readonly memory: MemoryService,
   ) {}
 
   async run(dto: AgentRequestDto): Promise<AgentResult> {
@@ -75,7 +77,15 @@ export class AgentService {
     const model = skill.preferredModel ?? this.config.getOrThrow<string>('LLM_MODEL');
 
     // ── 1. Build system prompt + message history ────────────────────────────
-    const systemPrompt = this.skills.buildSystemPrompt(skill);
+    const baseSystemPrompt = this.skills.buildSystemPrompt(skill);
+    // Inject long-term memory context when a userId is present
+    const memoryContext = dto.userId
+      ? await this.memory.buildContext(dto.userId)
+      : { systemFragment: '' };
+    const systemPrompt = memoryContext.systemFragment
+      ? `${baseSystemPrompt}\n\n${memoryContext.systemFragment}`
+      : baseSystemPrompt;
+
     const messageHistory = (dto.history ?? []).map((h) =>
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
@@ -143,6 +153,11 @@ export class AgentService {
       metadata: { ragChunksUsed, toolCallCount },
     });
 
+    // ── 7. Fire-and-forget memory extraction ────────────────────────────────
+    if (dto.userId && this.config.get<string>('MEMORY_EXTRACTION_ENABLED') !== 'false') {
+      this.memory.extractAndStore(dto.userId, dto.message, finalContent).catch(() => {});
+    }
+
     return {
       content: finalContent,
       skill: skillName,
@@ -166,7 +181,14 @@ export class AgentService {
     const startMs = Date.now();
     const model = skill.preferredModel ?? this.config.getOrThrow<string>('LLM_MODEL');
 
-    const systemPrompt = this.skills.buildSystemPrompt(skill);
+    const baseSystemPrompt = this.skills.buildSystemPrompt(skill);
+    const memoryContext = dto.userId
+      ? await this.memory.buildContext(dto.userId)
+      : { systemFragment: '' };
+    const systemPrompt = memoryContext.systemFragment
+      ? `${baseSystemPrompt}\n\n${memoryContext.systemFragment}`
+      : baseSystemPrompt;
+
     const messageHistory = (dto.history ?? []).map((h) =>
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
@@ -228,6 +250,11 @@ export class AgentService {
       userId: dto.userId,
       metadata: { ragChunksUsed, toolCallCount },
     });
+
+    // Fire-and-forget memory extraction
+    if (dto.userId && this.config.get<string>('MEMORY_EXTRACTION_ENABLED') !== 'false') {
+      this.memory.extractAndStore(dto.userId, dto.message, fullContent).catch(() => {});
+    }
 
     yield `data: ${JSON.stringify({
       type: 'done',

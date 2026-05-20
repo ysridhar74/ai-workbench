@@ -8,6 +8,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { McpModule } from './mcp/mcp.module';
 import { RagModule } from './rag/rag.module';
 import { AgentModule } from './agent/agent.module';
+import { MemoryModule } from './memory/memory.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AgentModule } from './agent/agent.module';
     LlmModule,
     SkillsModule,
     RagModule,
+    MemoryModule,
     ChatModule,
     AgentModule,
   ],
