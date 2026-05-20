@@ -74,31 +74,23 @@ export class AgentService {
     const startMs = Date.now();
     const model = skill.preferredModel ?? this.config.getOrThrow<string>('LLM_MODEL');
 
-    // ── 1. RAG context retrieval ────────────────────────────────────────────
-    let ragContext = '';
-    let ragChunksUsed = 0;
-    if (dto.useRag !== false) {
-      const chunks = await this.ragService.retrieve(dto.message, {
-        namespace: dto.namespace ?? 'default',
-        topK: 4,
-      });
-      ragChunksUsed = chunks.length;
-      if (chunks.length > 0) {
-        ragContext =
-          '\n\n## Relevant context from knowledge base\n' +
-          chunks.map((c, i) => `[${i + 1}] ${c.pageContent}`).join('\n\n');
-      }
-    }
-
-    // ── 2. Build system prompt + message history ────────────────────────────
-    const systemPrompt = this.skills.buildSystemPrompt(skill) + ragContext;
+    // ── 1. Build system prompt + message history ────────────────────────────
+    const systemPrompt = this.skills.buildSystemPrompt(skill);
     const messageHistory = (dto.history ?? []).map((h) =>
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
-    // ── 3. Build agent (cached per model) ──────────────────────────────────
-    const tools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-    const cacheKey = `${model}:${tools.length}`;
+    // ── 2. Build tool list ──────────────────────────────────────────────────
+    // RAG is now a tool the agent calls when it decides it needs knowledge —
+    // not pre-injected on every request (Option 3 pattern)
+    const mcpTools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const ragTool = dto.useRag !== false
+      ? [this.ragService.asLangChainTool(dto.namespace ?? 'default')]
+      : [];
+    const tools: any[] = [...ragTool, ...mcpTools];
+
+    // ── 3. Build agent (cached per model + tool fingerprint) ────────────────
+    const cacheKey = `${model}:${tools.map((t) => t.name).join(',')}`;
     if (!this.agentCache.has(cacheKey)) {
       const llm = buildLlm(this.config, model);
       this.agentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
@@ -126,7 +118,12 @@ export class AgentService {
     const finalContent =
       typeof lastAi?.content === 'string' ? lastAi.content : JSON.stringify(lastAi?.content ?? '');
 
-    const toolCallCount = msgs.filter((m: any) => m._getType?.() === 'tool').length;
+    const toolMsgs = msgs.filter((m: any) => m._getType?.() === 'tool');
+    const toolCallCount = toolMsgs.length;
+    // Count how many tool calls were search_knowledge_base
+    const ragChunksUsed = toolMsgs.filter((m: any) =>
+      m.name === 'search_knowledge_base',
+    ).length;
 
     const usageMeta = lastAi?.response_metadata?.usage ?? lastAi?.usage_metadata ?? {};
     const inputTokens: number = usageMeta.input_tokens ?? usageMeta.prompt_tokens ?? 0;
@@ -169,29 +166,18 @@ export class AgentService {
     const startMs = Date.now();
     const model = skill.preferredModel ?? this.config.getOrThrow<string>('LLM_MODEL');
 
-    // RAG retrieval
-    let ragContext = '';
-    let ragChunksUsed = 0;
-    if (dto.useRag !== false) {
-      const chunks = await this.ragService.retrieve(dto.message, {
-        namespace: dto.namespace ?? 'default',
-        topK: 4,
-      });
-      ragChunksUsed = chunks.length;
-      if (chunks.length > 0) {
-        ragContext =
-          '\n\n## Relevant context from knowledge base\n' +
-          chunks.map((c, i) => `[${i + 1}] ${c.pageContent}`).join('\n\n');
-      }
-    }
-
-    const systemPrompt = this.skills.buildSystemPrompt(skill) + ragContext;
+    const systemPrompt = this.skills.buildSystemPrompt(skill);
     const messageHistory = (dto.history ?? []).map((h) =>
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
-    const tools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-    const cacheKey = `${model}:${tools.length}:stream`;
+    const mcpTools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const ragTool = dto.useRag !== false
+      ? [this.ragService.asLangChainTool(dto.namespace ?? 'default')]
+      : [];
+    const tools: any[] = [...ragTool, ...mcpTools];
+
+    const cacheKey = `${model}:${tools.map((t) => t.name).join(',')}:stream`;
     if (!this.streamingAgentCache.has(cacheKey)) {
       const llm = buildLlm(this.config, model, true);
       this.streamingAgentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
@@ -200,6 +186,7 @@ export class AgentService {
 
     let fullContent = '';
     let toolCallCount = 0;
+    let ragChunksUsed = 0;
 
     const stream = await agent.streamEvents(
       {
@@ -222,6 +209,7 @@ export class AgentService {
       }
       if (event.event === 'on_tool_start') {
         toolCallCount++;
+        if (event.name === 'search_knowledge_base') ragChunksUsed++;
         yield `data: ${JSON.stringify({ type: 'tool_call', tool: event.name, input: event.data?.input })}\n\n`;
       }
       if (event.event === 'on_tool_end') {

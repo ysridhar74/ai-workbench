@@ -4,6 +4,7 @@ import { OpenAIEmbeddings } from '@langchain/openai';
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { Document } from '@langchain/core/documents';
+import { DynamicTool } from '@langchain/core/tools';
 import { MongoClient } from 'mongodb';
 
 export interface IngestResult {
@@ -137,6 +138,66 @@ export class RagService {
       this.logger.warn(`Vector search failed: ${err.message}`);
       return [];
     }
+  }
+
+  /**
+   * Returns a LangChain DynamicTool that the ReAct agent can call to search
+   * the knowledge base. The agent decides when to call it — Option 3 pattern.
+   *
+   * Input: plain string query, or JSON {"query":"...","namespace":"..."}
+   * Only chunks above RAG_SCORE_THRESHOLD (default 0.70) are returned.
+   * If nothing scores high enough, returns a clear "no results" message
+   * so the agent knows to rely on its own knowledge instead.
+   */
+  asLangChainTool(defaultNamespace = 'default'): DynamicTool {
+    const scoreThreshold = parseFloat(
+      this.config.get<string>('RAG_SCORE_THRESHOLD', '0.70'),
+    );
+
+    return new DynamicTool({
+      name: 'search_knowledge_base',
+      description:
+        'Search the internal knowledge base for relevant information. ' +
+        'Call this when the user asks about topics that may be covered in company documents, ' +
+        'product documentation, or any ingested knowledge. ' +
+        'Input: a JSON string {"query": "your search query", "namespace": "default"} ' +
+        'or just a plain search query string.',
+      func: async (input: string): Promise<string> => {
+        try {
+          let query = input.trim();
+          let namespace = defaultNamespace;
+
+          // Parse JSON input if provided
+          try {
+            const parsed = JSON.parse(input);
+            if (parsed.query) query = parsed.query;
+            if (parsed.namespace) namespace = parsed.namespace;
+          } catch {
+            // plain string — use as-is
+          }
+
+          const results = await this.retrieveWithScores(query, { namespace, topK: 4 });
+
+          // Filter by score threshold (Option 1 as a safety layer inside Option 3)
+          const relevant = results.filter(([, score]) => score >= scoreThreshold);
+
+          if (relevant.length === 0) {
+            return `No relevant results found in the knowledge base for: "${query}". Answer from your own knowledge.`;
+          }
+
+          // Format results for the model
+          return relevant
+            .map(([doc, score], i) =>
+              `[Result ${i + 1}] (relevance: ${(score * 100).toFixed(0)}%)\n` +
+              `Source: ${doc.metadata?.source ?? 'unknown'}\n` +
+              `${doc.pageContent}`,
+            )
+            .join('\n\n---\n\n');
+        } catch (err) {
+          return `Knowledge base search failed: ${err.message}`;
+        }
+      },
+    });
   }
 
   /**
