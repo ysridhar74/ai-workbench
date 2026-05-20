@@ -7,6 +7,15 @@ import { AppModule } from './app.module';
 // caused by LangGraph creating abort listeners on every agent invocation
 EventEmitter.defaultMaxListeners = 50;
 
+// Suppress OpenAI SDK warnings about Zod .optional() fields in MCP tool schemas.
+// These come from @modelcontextprotocol/sdk generating optional input fields —
+// not from our code — and do not affect tool calling behaviour with Ollama or LiteLLM.
+const originalEmit = process.emit.bind(process);
+(process as any).emit = (event: string, ...args: any[]) => {
+  if (event === 'warning' && args[0]?.message?.includes('.optional()')) return false;
+  return originalEmit(event, ...args);
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
