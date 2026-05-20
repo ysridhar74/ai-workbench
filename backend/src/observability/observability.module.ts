@@ -3,12 +3,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { AgentRun, AgentRunSchema } from '../db/schemas/agent-run.schema';
 import { ObservabilityService } from './observability.service';
+import { ObservabilityController } from './observability.controller';
 
 @Global()
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: AgentRun.name, schema: AgentRunSchema }]),
   ],
+  controllers: [ObservabilityController],
   providers: [ObservabilityService],
   exports: [ObservabilityService],
 })

@@ -179,6 +179,7 @@ export class AgentService {
       metrics: { ...metrics, model },
       userId: dto.userId,
       metadata: { ragChunksUsed, toolCallCount },
+      steps,
     });
 
     // ── 7. Fire-and-forget memory extraction ────────────────────────────────

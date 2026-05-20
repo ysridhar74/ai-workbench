@@ -46,6 +46,13 @@ export class AgentRun {
 
   @Prop({ type: Object, default: {} })
   metadata: Record<string, unknown>;
+
+  /** Ordered list of tool calls made during the run */
+  @Prop({ type: [Object], default: [] })
+  steps: Array<{ tool: string; input: unknown; output: string }>;
 }
 
 export const AgentRunSchema = SchemaFactory.createForClass(AgentRun);
+AgentRunSchema.index({ userId: 1, createdAt: -1 });
+AgentRunSchema.index({ skill: 1, createdAt: -1 });
+AgentRunSchema.index({ createdAt: -1 });

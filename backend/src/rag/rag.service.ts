@@ -201,6 +201,80 @@ export class RagService {
   }
 
   /**
+   * Ingest a PDF from a Buffer — extracts text with pdf-parse, then chunks + embeds.
+   */
+  async ingestPdf(
+    buffer: Buffer,
+    metadata: { source: string; namespace?: string; [key: string]: unknown },
+  ): Promise<IngestResult> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require('pdf-parse');
+    const parsed = await pdfParse(buffer);
+    const text: string = parsed.text ?? '';
+    if (!text.trim()) throw new Error('PDF contained no extractable text');
+    return this.ingestText(text, metadata);
+  }
+
+  /**
+   * Ingest a DOCX from a Buffer — extracts text with mammoth, then chunks + embeds.
+   */
+  async ingestDocx(
+    buffer: Buffer,
+    metadata: { source: string; namespace?: string; [key: string]: unknown },
+  ): Promise<IngestResult> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mammoth = require('mammoth');
+    const result = await mammoth.extractRawText({ buffer });
+    const text: string = result.value ?? '';
+    if (!text.trim()) throw new Error('DOCX contained no extractable text');
+    return this.ingestText(text, metadata);
+  }
+
+  /**
+   * Ingest a web page — fetches the URL and strips HTML tags, then chunks + embeds.
+   */
+  async ingestUrl(
+    url: string,
+    metadata: { namespace?: string; [key: string]: unknown } = {},
+  ): Promise<IngestResult> {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'AI-Workbench-RAG/1.0' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${url}`);
+    const html = await response.text();
+    // Strip tags, collapse whitespace
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (!text) throw new Error('URL returned no usable text content');
+    return this.ingestText(text, { source: url, ...metadata });
+  }
+
+  /**
+   * List all distinct sources ingested in a namespace.
+   */
+  async listSources(namespace = 'default'): Promise<string[]> {
+    await this.ensureReady();
+    const dbName = this.config.get<string>('MONGODB_DB', 'ai_workbench');
+    const col = this.mongoClient!.db(dbName).collection('rag_chunks');
+    return col.distinct('source', { namespace }) as Promise<string[]>;
+  }
+
+  /**
+   * List all distinct namespaces in the RAG store.
+   */
+  async listNamespaces(): Promise<string[]> {
+    await this.ensureReady();
+    const dbName = this.config.get<string>('MONGODB_DB', 'ai_workbench');
+    const col = this.mongoClient!.db(dbName).collection('rag_chunks');
+    return col.distinct('namespace') as Promise<string[]>;
+  }
+
+  /**
    * Delete all chunks for a given source document.
    */
   async deleteSource(source: string, namespace = 'default'): Promise<void> {
