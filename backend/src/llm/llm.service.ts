@@ -60,7 +60,7 @@ export class LlmService {
     const response = await this.client.chat.completions.create({
       model,
       messages,
-      temperature: options?.temperature ?? 0.7,
+      temperature: options?.temperature ?? 1,
       max_tokens: options?.maxTokens ?? 2048,
     });
 
@@ -89,7 +89,7 @@ export class LlmService {
     const stream = await this.client.chat.completions.create({
       model,
       messages,
-      temperature: options?.temperature ?? 0.7,
+      temperature: options?.temperature ?? 1,
       max_tokens: options?.maxTokens ?? 2048,
       stream: true,
       stream_options: { include_usage: true },
