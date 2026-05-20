@@ -1,9 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
-import { StructuredToolInterface } from '@langchain/core/tools';
 import { traceable } from 'langsmith/traceable';
 import { SkillsService } from '../skills/skills.service';
 import { McpRegistryService } from '../mcp/mcp-registry.service';
@@ -26,6 +26,23 @@ export interface AgentResult {
     summary: string;
   };
   runId: string;
+}
+
+/** Build ChatOpenAI instance — shared between run() and runStream() */
+function buildLlm(config: ConfigService, model: string, streaming = false): ChatOpenAI {
+  return new ChatOpenAI({
+    modelName: model,
+    temperature: 0.7,
+    streaming,
+    openAIApiKey:
+      config.get<string>('OPENAI_API_KEY') ||
+      config.get<string>('ANTHROPIC_API_KEY') ||
+      config.get<string>('LLM_API_KEY') ||
+      'ollama',
+    configuration: {
+      baseURL: config.get<string>('LLM_BASE_URL') || undefined,
+    },
+  } as any);
 }
 
 @Injectable()
@@ -64,85 +81,50 @@ export class AgentService {
       }
     }
 
-    // ── 2. Build system prompt (skill template + RAG context) ───────────────
+    // ── 2. Build system prompt + message history ────────────────────────────
     const systemPrompt = this.skills.buildSystemPrompt(skill) + ragContext;
-
-    // ── 3. Build LangChain message history ──────────────────────────────────
     const messageHistory = (dto.history ?? []).map((h) =>
-      h.role === 'user'
-        ? new HumanMessage(h.content)
-        : new AIMessage(h.content),
+      h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
-    // ── 4. Configure LLM (OpenAI-compat, works with Ollama + LiteLLM) ───────
-    const llm = new ChatOpenAI({
-      modelName: model,
-      temperature: 0.7,
-      openAIApiKey:
-        this.config.get<string>('OPENAI_API_KEY') ||
-        this.config.get<string>('ANTHROPIC_API_KEY') ||
-        this.config.get<string>('LLM_API_KEY') ||
-        'ollama',
-      configuration: {
-        baseURL: this.config.get<string>('LLM_BASE_URL') || undefined,
-      },
-    });
+    // ── 3. Build agent ──────────────────────────────────────────────────────
+    const llm = buildLlm(this.config, model);
+    // Use any[] to avoid TypeScript's deep generic instantiation limit on tool types
+    const tools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const agent = createReactAgent({ llm, tools } as any);
 
-    // ── 5. Get MCP tools ─────────────────────────────────────────────────────
-    const tools: StructuredToolInterface[] =
-      dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-
-    // ── 6. Create LangGraph ReAct agent ─────────────────────────────────────
-    // createReactAgent builds a StateGraph with:
-    //   __start__ → call_model → (tool_node | __end__)
-    //   tool_node loops back to call_model until no more tool calls
-    const agent = createReactAgent({ llm, tools: tools as any });
-
-    // ── 7. Run the agent inside a LangSmith trace ───────────────────────────
+    // ── 4. Run inside a LangSmith trace ─────────────────────────────────────
     const tracedRun = traceable(
-      async () => {
-        const result = await agent.invoke({
+      async () =>
+        agent.invoke({
           messages: [
             new SystemMessage(systemPrompt),
             ...messageHistory,
             new HumanMessage(dto.message),
           ],
-        });
-        return result;
-      },
-      {
-        name: `agent:${skillName}`,
-        metadata: { skill: skillName, userId: dto.userId, ragChunksUsed },
-      },
+        }),
+      { name: `agent:${skillName}`, metadata: { skill: skillName, userId: dto.userId, ragChunksUsed } },
     );
 
     const agentResult = await tracedRun();
 
-    // ── 8. Extract final response and token usage ───────────────────────────
-    const messages = agentResult.messages as (HumanMessage | AIMessage | SystemMessage)[];
-    const lastAi = [...messages].reverse().find((m) => m._getType() === 'ai');
+    // ── 5. Extract response + token usage ───────────────────────────────────
+    const msgs: any[] = agentResult.messages ?? [];
+    const lastAi = [...msgs].reverse().find((m: any) => m._getType?.() === 'ai');
     const finalContent =
-      typeof lastAi?.content === 'string'
-        ? lastAi.content
-        : JSON.stringify(lastAi?.content ?? '');
+      typeof lastAi?.content === 'string' ? lastAi.content : JSON.stringify(lastAi?.content ?? '');
 
-    // Count tool calls in the message history
-    const toolCallCount = messages.filter(
-      (m) => m._getType() === 'tool',
-    ).length;
+    const toolCallCount = msgs.filter((m: any) => m._getType?.() === 'tool').length;
 
-    // Extract token usage from the last AI message metadata if available
-    const usageMeta = (lastAi as any)?.response_metadata?.usage ?? (lastAi as any)?.usage_metadata ?? {};
+    const usageMeta = lastAi?.response_metadata?.usage ?? lastAi?.usage_metadata ?? {};
     const inputTokens: number = usageMeta.input_tokens ?? usageMeta.prompt_tokens ?? 0;
     const outputTokens: number = usageMeta.output_tokens ?? usageMeta.completion_tokens ?? 0;
     const totalTokens = inputTokens + outputTokens;
-
     const durationMs = Date.now() - startMs;
     const costUsd = this.observability.calculateCost(model, inputTokens, outputTokens);
-
     const metrics = { inputTokens, outputTokens, totalTokens, costUsd, durationMs };
 
-    // ── 9. Persist run to MongoDB ────────────────────────────────────────────
+    // ── 6. Persist to MongoDB ────────────────────────────────────────────────
     const runId = await this.observability.recordRun({
       skill: skillName,
       input: dto.message,
@@ -166,7 +148,7 @@ export class AgentService {
     };
   }
 
-  /** Streaming version — yields SSE events */
+  /** Streaming version — yields SSE events while the agent runs */
   async *runStream(dto: AgentRequestDto): AsyncGenerator<string> {
     const skillName = dto.skill ?? 'general-assistant';
     const skill = await this.skills.findByName(skillName);
@@ -196,23 +178,9 @@ export class AgentService {
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
-    const llm = new ChatOpenAI({
-      modelName: model,
-      temperature: 0.7,
-      streaming: true,
-      openAIApiKey:
-        this.config.get<string>('OPENAI_API_KEY') ||
-        this.config.get<string>('ANTHROPIC_API_KEY') ||
-        this.config.get<string>('LLM_API_KEY') ||
-        'ollama',
-      configuration: {
-        baseURL: this.config.get<string>('LLM_BASE_URL') || undefined,
-      },
-    });
-
-    const tools: StructuredToolInterface[] =
-      dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
-    const agent = createReactAgent({ llm, tools: tools as any });
+    const llm = buildLlm(this.config, model, true);
+    const tools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const agent = createReactAgent({ llm, tools } as any);
 
     let fullContent = '';
     let toolCallCount = 0;
@@ -229,7 +197,6 @@ export class AgentService {
     );
 
     for await (const event of stream) {
-      // Stream text chunks from the LLM
       if (event.event === 'on_chat_model_stream') {
         const chunk = event.data?.chunk?.content;
         if (chunk && typeof chunk === 'string') {
@@ -237,29 +204,17 @@ export class AgentService {
           yield `data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`;
         }
       }
-
-      // Notify when a tool is being called
       if (event.event === 'on_tool_start') {
         toolCallCount++;
-        yield `data: ${JSON.stringify({
-          type: 'tool_call',
-          tool: event.name,
-          input: event.data?.input,
-        })}\n\n`;
+        yield `data: ${JSON.stringify({ type: 'tool_call', tool: event.name, input: event.data?.input })}\n\n`;
       }
-
-      // Notify when tool result comes back
       if (event.event === 'on_tool_end') {
-        yield `data: ${JSON.stringify({
-          type: 'tool_result',
-          tool: event.name,
-        })}\n\n`;
+        yield `data: ${JSON.stringify({ type: 'tool_result', tool: event.name })}\n\n`;
       }
     }
 
-    // Persist and send final metrics
     const durationMs = Date.now() - startMs;
-    const costUsd = this.observability.calculateCost(model, 0, 0); // tokens not available in stream
+    const costUsd = this.observability.calculateCost(model, 0, 0);
 
     const runId = await this.observability.recordRun({
       skill: skillName,
