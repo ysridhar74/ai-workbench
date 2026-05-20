@@ -6,15 +6,34 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_FILESYSTEM_ROOT}"],
-    "tools": [
-      "read_file",
-      "read_multiple_files",
-      "write_file",
-      "list_directory",
-      "create_directory",
-      "move_file",
-      "search_files",
-      "get_file_info"
-    ]
+    "tools": []
+  },
+
+  {
+    "_comment": "Example: remote MCP server using modern Streamable HTTP transport (MCP spec 2025-03-26)",
+    "name": "remote-example",
+    "description": "Example remote MCP server over HTTP",
+    "enabled": false,
+    "transport": "streamable-http",
+    "url": "http://localhost:8080/mcp",
+    "headers": {
+      "Authorization": "Bearer ${REMOTE_MCP_TOKEN}"
+    },
+    "timeout": 30000,
+    "tools": []
+  },
+
+  {
+    "_comment": "Example: legacy SSE-based MCP server (older MCP spec)",
+    "name": "legacy-sse-example",
+    "description": "Example legacy SSE MCP server",
+    "enabled": false,
+    "transport": "sse",
+    "url": "http://localhost:9090/sse",
+    "headers": {
+      "Authorization": "Bearer ${LEGACY_MCP_TOKEN}"
+    },
+    "timeout": 30000,
+    "tools": []
   }
 ]

@@ -3,16 +3,29 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { DynamicTool } from '@langchain/core/tools';
 import * as fs from 'fs';
 import * as path from 'path';
-import { McpServerConfig, McpTool } from './mcp.types';
+import { McpServerConfig, McpTool, McpServerStatus } from './mcp.types';
+
+interface ServerEntry {
+  config: McpServerConfig;
+  client: Client | null;
+  connected: boolean;
+  error?: string;
+}
 
 @Injectable()
 export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(McpRegistryService.name);
+
+  /** All tools indexed by tool name (serverName__toolName) */
   private readonly tools = new Map<string, McpTool>();
-  private readonly clients = new Map<string, Client>();
+
+  /** Server state indexed by server name */
+  private readonly servers = new Map<string, ServerEntry>();
 
   constructor(private readonly config: ConfigService) {}
 
@@ -21,13 +34,12 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    for (const [name, client] of this.clients) {
-      try {
-        await client.close();
-        this.logger.log(`Disconnected MCP server: ${name}`);
-      } catch {}
-    }
+    await this.disconnectAll();
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Startup
+  // ─────────────────────────────────────────────────────────────────────────
 
   private async loadServers() {
     const configPath = path.join(process.cwd(), 'config', 'mcp-servers.json');
@@ -36,73 +48,192 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const raw = fs.readFileSync(configPath, 'utf-8');
+    const serverConfigs = this.parseConfig(configPath);
 
-    // Expand ${ENV_VAR} placeholders — config.get may return undefined, fall back to the key name
-    const expanded = raw.replace(/\$\{(\w+)\}/g, (_match: string, key: string): string => {
-      return this.config.get<string>(key) ?? key;
-    });
-
-    const servers: McpServerConfig[] = JSON.parse(expanded);
-
-    for (const server of servers) {
-      if (!server.enabled) continue;
-      try {
-        await this.connectServer(server);
-      } catch (err) {
-        this.logger.error(`Failed to connect MCP server "${server.name}": ${err.message}`);
-      }
-    }
+    await Promise.allSettled(
+      serverConfigs
+        .filter((s) => s.enabled)
+        .map((s) => this.connectServer(s)),
+    );
 
     this.logger.log(
-      `MCP registry ready — ${this.tools.size} tool(s) across ${this.clients.size} server(s)`,
+      `MCP registry ready — ${this.tools.size} tool(s) across ${this.servers.size} server(s)`,
     );
   }
 
-  private async connectServer(server: McpServerConfig) {
-    if (server.transport !== 'stdio' || !server.command) return;
-
-    const transport = new StdioClientTransport({
-      command: server.command,
-      args: server.args ?? [],
-    });
-
-    const client = new Client(
-      { name: 'ai-workbench', version: '1.0.0' },
-      { capabilities: {} },
+  private parseConfig(configPath: string): McpServerConfig[] {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    // Expand ${ENV_VAR} placeholders
+    const expanded = raw.replace(/\$\{(\w+)\}/g, (_m: string, key: string): string =>
+      this.config.get<string>(key) ?? key,
     );
+    return JSON.parse(expanded) as McpServerConfig[];
+  }
 
-    await client.connect(transport);
-    this.clients.set(server.name, client);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Connect / disconnect individual servers
+  // ─────────────────────────────────────────────────────────────────────────
 
-    const { tools } = await client.listTools();
+  async connectServer(serverConfig: McpServerConfig): Promise<void> {
+    // Remove any existing tools for this server first
+    this.removeServerTools(serverConfig.name);
 
-    for (const t of tools) {
-      const mcpTool: McpTool = {
-        name: `${server.name}__${t.name}`,
-        description: `[${server.name}] ${t.description ?? t.name}`,
-        server: server.name,
-        inputSchema: t.inputSchema as Record<string, unknown>,
-        execute: async (args) => {
-          const result = await client.callTool({ name: t.name, arguments: args });
-          return result.content;
-        },
-      };
-      this.tools.set(mcpTool.name, mcpTool);
+    const entry: ServerEntry = {
+      config: serverConfig,
+      client: null,
+      connected: false,
+    };
+    this.servers.set(serverConfig.name, entry);
+
+    try {
+      const client = new Client(
+        { name: 'ai-workbench', version: '1.0.0' },
+        { capabilities: {} },
+      );
+
+      const transport = this.buildTransport(serverConfig);
+      await client.connect(transport);
+
+      entry.client = client;
+      entry.connected = true;
+
+      const { tools } = await client.listTools();
+
+      for (const t of tools) {
+        const toolName = `${serverConfig.name}__${t.name}`;
+        const mcpTool: McpTool = {
+          name: toolName,
+          description: `[${serverConfig.name}] ${t.description ?? t.name}`,
+          server: serverConfig.name,
+          inputSchema: t.inputSchema as Record<string, unknown>,
+          execute: async (args) => {
+            const timeout = serverConfig.timeout ?? 30_000;
+            return Promise.race([
+              client.callTool({ name: t.name, arguments: args }).then((r) => r.content),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`Tool call timed out after ${timeout}ms`)), timeout),
+              ),
+            ]);
+          },
+        };
+        this.tools.set(toolName, mcpTool);
+      }
+
+      this.logger.log(
+        `Connected MCP server "${serverConfig.name}" (${serverConfig.transport}) — ${tools.length} tool(s)`,
+      );
+    } catch (err) {
+      entry.error = err.message;
+      this.logger.error(
+        `Failed to connect MCP server "${serverConfig.name}": ${err.message}`,
+      );
+    }
+  }
+
+  async disconnectServer(name: string): Promise<void> {
+    const entry = this.servers.get(name);
+    if (!entry) return;
+
+    try {
+      await entry.client?.close();
+    } catch {}
+
+    this.removeServerTools(name);
+    this.servers.delete(name);
+    this.logger.log(`Disconnected MCP server "${name}"`);
+  }
+
+  private async disconnectAll() {
+    for (const [name] of this.servers) {
+      await this.disconnectServer(name);
+    }
+  }
+
+  private removeServerTools(serverName: string) {
+    for (const [key] of this.tools) {
+      if (key.startsWith(`${serverName}__`)) {
+        this.tools.delete(key);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Transport factory
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private buildTransport(server: McpServerConfig) {
+    switch (server.transport) {
+      case 'stdio': {
+        if (!server.command) throw new Error(`stdio server "${server.name}" requires "command"`);
+        return new StdioClientTransport({
+          command: server.command,
+          args: server.args ?? [],
+          env: server.env ? { ...process.env, ...server.env } as Record<string, string> : undefined,
+        });
+      }
+
+      case 'streamable-http': {
+        if (!server.url) throw new Error(`streamable-http server "${server.name}" requires "url"`);
+        return new StreamableHTTPClientTransport(
+          new URL(server.url),
+          {
+            requestInit: server.headers
+              ? { headers: server.headers }
+              : undefined,
+          },
+        );
+      }
+
+      case 'sse': {
+        if (!server.url) throw new Error(`sse server "${server.name}" requires "url"`);
+        return new SSEClientTransport(
+          new URL(server.url),
+          server.headers
+            ? { requestInit: { headers: server.headers } }
+            : undefined,
+        );
+      }
+
+      default:
+        throw new Error(`Unknown transport type "${(server as any).transport}"`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Hot reload — re-read config file and reconnect changed servers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async reload(): Promise<void> {
+    const configPath = path.join(process.cwd(), 'config', 'mcp-servers.json');
+    if (!fs.existsSync(configPath)) {
+      this.logger.warn('mcp-servers.json not found during reload');
+      return;
     }
 
-    this.logger.log(`Connected MCP server "${server.name}" — ${tools.length} tool(s)`);
+    const serverConfigs = this.parseConfig(configPath);
+
+    // Disconnect servers that are no longer in config or are disabled
+    const newNames = new Set(serverConfigs.filter((s) => s.enabled).map((s) => s.name));
+    for (const [name] of this.servers) {
+      if (!newNames.has(name)) await this.disconnectServer(name);
+    }
+
+    // Connect new / reconnect updated servers
+    await Promise.allSettled(
+      serverConfigs
+        .filter((s) => s.enabled)
+        .map((s) => this.connectServer(s)),
+    );
+
+    this.logger.log(`MCP registry reloaded — ${this.tools.size} tool(s)`);
   }
 
-  /**
-   * Return all registered MCP tools as LangChain DynamicTool instances.
-   * DynamicTool accepts a plain string input, avoiding the deep generic
-   * inference that triggers TS2589 with structured tool types.
-   * The agent passes JSON-stringified args; we parse them before calling MCP.
-   */
+  // ─────────────────────────────────────────────────────────────────────────
+  // LangChain tool adapter
+  // ─────────────────────────────────────────────────────────────────────────
+
   getLangChainTools(): DynamicTool[] {
     return Array.from(this.tools.values()).map((mcpTool) => {
-      // Build a description that tells the model exactly what JSON shape to pass
       const schemaHint = this.buildSchemaHint(mcpTool.inputSchema);
       const description =
         `${mcpTool.description}. ` +
@@ -114,16 +245,14 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
         func: async (input: string): Promise<string> => {
           try {
             let args: Record<string, unknown> = {};
-            // Try to parse as JSON first
             try {
               const parsed = JSON.parse(input);
-              // Handle case where model wraps in { input: "..." }
               args = typeof parsed === 'object' && parsed !== null ? parsed : { path: input };
             } catch {
-              // Plain string — treat as path for filesystem tools, generic input otherwise
-              args = input.trim().startsWith('/') || input.trim().startsWith('~')
-                ? { path: input.trim() }
-                : { input: input.trim() };
+              args =
+                input.trim().startsWith('/') || input.trim().startsWith('~')
+                  ? { path: input.trim() }
+                  : { input: input.trim() };
             }
             const result = await mcpTool.execute(args);
             return typeof result === 'string' ? result : JSON.stringify(result);
@@ -135,10 +264,6 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Build a compact JSON shape hint from the MCP tool's input schema.
-   * e.g. { "path": "string (required)" }
-   */
   private buildSchemaHint(schema: Record<string, unknown>): string {
     try {
       const props = (schema as any)?.properties ?? {};
@@ -154,9 +279,28 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** List all available tools (for the /agent/tools API endpoint) */
+  // ─────────────────────────────────────────────────────────────────────────
+  // Inspection API
+  // ─────────────────────────────────────────────────────────────────────────
+
   listTools(): Omit<McpTool, 'execute'>[] {
     return Array.from(this.tools.values()).map(({ execute: _exec, ...rest }) => rest);
+  }
+
+  listServers(): McpServerStatus[] {
+    return Array.from(this.servers.values()).map((entry) => ({
+      name: entry.config.name,
+      description: entry.config.description,
+      transport: entry.config.transport,
+      enabled: entry.config.enabled,
+      connected: entry.connected,
+      toolCount: Array.from(this.tools.keys()).filter((k) =>
+        k.startsWith(`${entry.config.name}__`),
+      ).length,
+      url: entry.config.url,
+      command: entry.config.command,
+      error: entry.error,
+    }));
   }
 
   getToolCount(): number {
