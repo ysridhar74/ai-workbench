@@ -5,6 +5,9 @@ import { SkillsModule } from './skills/skills.module';
 import { LlmModule } from './llm/llm.module';
 import { ChatModule } from './chat/chat.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { McpModule } from './mcp/mcp.module';
+import { RagModule } from './rag/rag.module';
+import { AgentModule } from './agent/agent.module';
 
 @Module({
   imports: [
@@ -21,11 +24,16 @@ import { ObservabilityModule } from './observability/observability.module';
       inject: [ConfigService],
     }),
 
-    // Feature modules
+    // Core infrastructure (global)
     ObservabilityModule,
+    McpModule,
+
+    // Feature modules
     LlmModule,
     SkillsModule,
+    RagModule,
     ChatModule,
+    AgentModule,
   ],
 })
 export class AppModule {}

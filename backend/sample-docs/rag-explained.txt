@@ -1,0 +1,33 @@
+What is RAG?
+============
+
+RAG stands for Retrieval-Augmented Generation. It is a technique that improves the accuracy and relevance of large language model (LLM) responses by injecting relevant documents or knowledge into the prompt before the LLM generates its answer.
+
+How RAG Works
+-------------
+RAG has two phases: ingestion and retrieval.
+
+Ingestion phase:
+1. Documents are loaded from a source (files, databases, web pages, etc.)
+2. Each document is split into smaller chunks (typically 500–1000 tokens each)
+3. Each chunk is converted to a vector embedding using an embedding model
+4. The chunks and their embeddings are stored in a vector database
+
+Retrieval phase:
+1. The user's query is converted to a vector embedding using the same model
+2. The vector database finds the chunks whose embeddings are most similar to the query (cosine similarity)
+3. The top-k most relevant chunks are retrieved (typically 3–5)
+4. The chunks are injected into the LLM prompt as context
+5. The LLM generates its response using both its training knowledge and the injected context
+
+Why RAG?
+--------
+LLMs have a knowledge cutoff — they don't know about events or documents after their training date. RAG solves this by letting you inject any knowledge you want at query time. It also reduces hallucination because the model is grounding its answer in specific retrieved text rather than relying solely on memorised patterns.
+
+RAG vs Fine-tuning
+------------------
+Fine-tuning changes the model's weights to incorporate new knowledge permanently. RAG keeps the model unchanged and injects knowledge dynamically. RAG is cheaper, faster to update, and easier to debug. Fine-tuning is better when you need the model to adopt a specific style or perform a task it fundamentally cannot do out of the box.
+
+MongoDB Atlas Vector Search
+---------------------------
+MongoDB Atlas Vector Search allows you to store vector embeddings alongside your regular document data in the same MongoDB collection. This eliminates the need for a separate vector database. You create a vector search index on your collection and query it using the $vectorSearch aggregation stage. AI Workbench uses this for all RAG storage.

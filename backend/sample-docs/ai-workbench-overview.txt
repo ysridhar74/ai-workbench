@@ -1,0 +1,37 @@
+AI Workbench Overview
+=====================
+
+AI Workbench is a modular, extensible platform for AI-powered workflows. It runs as both a web application and a desktop application from a single shared backend and frontend codebase.
+
+Core Capabilities
+-----------------
+The platform provides five core capabilities that can be used independently or together:
+
+1. Agentic AI: The Agent Runner executes tasks using a ReAct (Reason + Act) loop. It decides which tools to call at each step, executes them via the MCP Registry, and loops until the task is complete.
+
+2. Skills: Skills are plug-and-play workflow modules. Each skill has a name, description, prompt template, and optional tool list. Adding a new skill requires only adding a config entry — no code changes to the core framework.
+
+3. MCP Servers: The MCP Registry connects to external tool servers using the Model Context Protocol. Tools from all connected servers are merged into a single namespace available to every agent.
+
+4. RAG (Retrieval-Augmented Generation): The RAG Engine ingests documents, chunks them, generates embeddings, and stores them in MongoDB Atlas Vector Search. At query time it retrieves the most relevant chunks and injects them into the agent context.
+
+5. Memory: The Memory Manager provides three tiers — short-term (in-session conversation history), long-term (extracted facts persisted across sessions), and entity memory (structured records for people, projects, and concepts).
+
+Technology Stack
+----------------
+- Backend: TypeScript / Node.js with NestJS
+- Agent orchestration: LangGraph (TypeScript)
+- RAG pipeline: LangChain (TypeScript)
+- Observability: LangSmith (traces, token counts, cost per request)
+- Database: MongoDB Atlas (RAG chunks, memory, skills, agent run logs)
+- LLM Gateway: LiteLLM (supports Claude, GPT-4, Ollama, and more)
+- Frontend: TypeScript / React
+- Desktop shell: Electron
+
+Deployment
+----------
+The platform runs in two modes:
+- Web: React SPA + NestJS backend deployed as an OSS2 container
+- Desktop: Same frontend bundled in Electron; backend runs as a local process
+
+Both modes share the same backend codebase. The desktop adds local file system access, OS notifications, and system tray integration.
