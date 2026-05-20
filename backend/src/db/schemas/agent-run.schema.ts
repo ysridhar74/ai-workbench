@@ -35,13 +35,13 @@ export class AgentRun {
   @Prop({ default: 0 })
   costUsd: number;
 
-  @Prop({ default: null })
+  @Prop({ type: String, default: null })
   langsmithTraceId: string | null;
 
-  @Prop({ default: null })
+  @Prop({ type: String, default: null })
   model: string | null;
 
-  @Prop({ default: null })
+  @Prop({ type: String, default: null })
   userId: string | null;
 
   @Prop({ type: Object, default: {} })

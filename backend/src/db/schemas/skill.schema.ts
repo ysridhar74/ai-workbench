@@ -17,7 +17,7 @@ export class Skill {
   @Prop({ type: [String], default: [] })
   tools: string[];
 
-  @Prop({ default: null })
+  @Prop({ type: String, default: null })
   preferredModel: string | null;
 
   @Prop({ default: true })
