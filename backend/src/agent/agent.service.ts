@@ -48,9 +48,15 @@ function buildLlm(config: ConfigService, model: string, streaming = false): Chat
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
-  // Cache agents by model name so we don't recreate on every request
+  // Cache agents by model+toolCount key — recreated when tool count changes
   private readonly agentCache = new Map<string, any>();
   private readonly streamingAgentCache = new Map<string, any>();
+
+  clearAgentCache() {
+    this.agentCache.clear();
+    this.streamingAgentCache.clear();
+    this.logger.log('Agent cache cleared');
+  }
 
   constructor(
     private readonly config: ConfigService,

@@ -101,28 +101,57 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
    * The agent passes JSON-stringified args; we parse them before calling MCP.
    */
   getLangChainTools(): DynamicTool[] {
-    return Array.from(this.tools.values()).map(
-      (mcpTool) =>
-        new DynamicTool({
-          name: mcpTool.name,
-          description: mcpTool.description,
-          func: async (input: string): Promise<string> => {
+    return Array.from(this.tools.values()).map((mcpTool) => {
+      // Build a description that tells the model exactly what JSON shape to pass
+      const schemaHint = this.buildSchemaHint(mcpTool.inputSchema);
+      const description =
+        `${mcpTool.description}. ` +
+        `Input must be a JSON string with this shape: ${schemaHint}`;
+
+      return new DynamicTool({
+        name: mcpTool.name,
+        description,
+        func: async (input: string): Promise<string> => {
+          try {
+            let args: Record<string, unknown> = {};
+            // Try to parse as JSON first
             try {
-              // The LLM may pass a JSON string or a plain string
-              let args: Record<string, unknown> = {};
-              try {
-                args = JSON.parse(input);
-              } catch {
-                args = { input };
-              }
-              const result = await mcpTool.execute(args);
-              return typeof result === 'string' ? result : JSON.stringify(result);
-            } catch (err) {
-              return `Error calling ${mcpTool.name}: ${err.message}`;
+              const parsed = JSON.parse(input);
+              // Handle case where model wraps in { input: "..." }
+              args = typeof parsed === 'object' && parsed !== null ? parsed : { path: input };
+            } catch {
+              // Plain string — treat as path for filesystem tools, generic input otherwise
+              args = input.trim().startsWith('/') || input.trim().startsWith('~')
+                ? { path: input.trim() }
+                : { input: input.trim() };
             }
-          },
-        }),
-    );
+            const result = await mcpTool.execute(args);
+            return typeof result === 'string' ? result : JSON.stringify(result);
+          } catch (err) {
+            return `Error calling ${mcpTool.name}: ${err.message}`;
+          }
+        },
+      });
+    });
+  }
+
+  /**
+   * Build a compact JSON shape hint from the MCP tool's input schema.
+   * e.g. { "path": "string (required)" }
+   */
+  private buildSchemaHint(schema: Record<string, unknown>): string {
+    try {
+      const props = (schema as any)?.properties ?? {};
+      const required: string[] = (schema as any)?.required ?? [];
+      const hint: Record<string, string> = {};
+      for (const [key, val] of Object.entries(props)) {
+        const type = (val as any)?.type ?? 'string';
+        hint[key] = required.includes(key) ? `${type} (required)` : `${type} (optional)`;
+      }
+      return JSON.stringify(hint);
+    } catch {
+      return '{}';
+    }
   }
 
   /** List all available tools (for the /agent/tools API endpoint) */
