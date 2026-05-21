@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, User, Sparkles, Trash2 } from 'lucide-react';
+import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,63 +103,66 @@ function LiveToolBadge({ tool }: { tool: string | null }) {
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === 'user';
 
+  if (isUser) {
+    return (
+      <div className="flex justify-end px-4 py-2 animate-fade-in">
+        <div className="max-w-[70%]">
+          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed">
+            {msg.content}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Assistant message — full width left-aligned like Claude/ChatGPT
   return (
-    <div className={cn('flex gap-3 animate-fade-in', isUser ? 'flex-row-reverse' : 'flex-row')}>
+    <div className="flex gap-3 px-4 py-2 animate-fade-in">
       {/* Avatar */}
-      <div className={cn(
-        'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold',
-        isUser ? 'bg-slate-700' : 'bg-primary',
-      )}>
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center mt-0.5">
+        <Bot className="w-4 h-4 text-white" />
       </div>
 
-      {/* Content */}
-      <div className={cn('max-w-[80%] space-y-1', isUser ? 'items-end flex flex-col' : '')}>
-        <div className={cn(
-          'rounded-2xl px-4 py-3 text-sm leading-relaxed',
-          isUser
-            ? 'bg-primary text-primary-foreground rounded-tr-sm'
-            : 'bg-white border shadow-sm rounded-tl-sm',
-        )}>
+      {/* Content fills remaining width */}
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="text-sm leading-relaxed text-foreground">
           {msg.isStreaming && !msg.content ? (
-            <span className="flex gap-1 items-center h-5">
+            <span className="flex gap-1 items-center h-5 mt-1">
               <span className="typing-dot" />
               <span className="typing-dot" />
               <span className="typing-dot" />
             </span>
           ) : (
             <div className="prose prose-sm max-w-none">
-            <ReactMarkdown
-              components={{
-                code: ({ children, className }) => {
-                  const isBlock = className?.includes('language-');
-                  return isBlock
-                    ? <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-2"><code>{children}</code></pre>
-                    : <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
-                },
-                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-              }}
-            >
-              {msg.content}
-            </ReactMarkdown>
+              <ReactMarkdown
+                components={{
+                  code: ({ children, className }) => {
+                    const isBlock = className?.includes('language-');
+                    return isBlock
+                      ? <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-2"><code>{children}</code></pre>
+                      : <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
+                  },
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                }}
+              >
+                {msg.content}
+              </ReactMarkdown>
             </div>
           )}
         </div>
 
-        {/* Metrics row */}
-        {msg.metrics && (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-1">
-            <span>{msg.metrics.durationMs ? `${(msg.metrics.durationMs / 1000).toFixed(1)}s` : ''}</span>
-            {msg.metrics.totalTokens > 0 && <span>{msg.metrics.totalTokens} tokens</span>}
-            {msg.metrics.costUsd > 0 && <span>${msg.metrics.costUsd.toFixed(5)}</span>}
-            {msg.runId && <span className="font-mono opacity-50">{msg.runId.slice(0, 8)}</span>}
-          </div>
+        {/* Tool trace */}
+        {msg.steps && msg.steps.length > 0 && (
+          <ToolTrace steps={msg.steps} ragChunksUsed={msg.ragChunksUsed} />
         )}
 
-        {/* Tool trace */}
-        {!isUser && msg.steps && (
-          <div className="w-full">
-            <ToolTrace steps={msg.steps} ragChunksUsed={msg.ragChunksUsed} />
+        {/* Metrics row */}
+        {msg.metrics && (
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            {msg.metrics.durationMs > 0 && <span>{(msg.metrics.durationMs / 1000).toFixed(1)}s</span>}
+            {msg.metrics.totalTokens > 0 && <span>{msg.metrics.totalTokens} tokens</span>}
+            {msg.metrics.costUsd > 0 && <span>${msg.metrics.costUsd.toFixed(5)}</span>}
+            {msg.runId && <span className="font-mono opacity-40">{msg.runId.slice(0, 8)}</span>}
           </div>
         )}
       </div>
@@ -349,9 +352,9 @@ export function ChatPage() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-6 py-4">
+      <ScrollArea className="flex-1 py-6">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full py-24 text-center">
+          <div className="flex flex-col items-center justify-center h-full py-24 text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
               <Sparkles className="w-6 h-6 text-primary" />
             </div>
@@ -377,13 +380,13 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="space-y-6 max-w-3xl mx-auto">
+        <div className="space-y-1">
           {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
 
           {/* Live tool indicator */}
           {activeTool && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+            <div className="flex gap-3 px-4 py-3">
+              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="bg-white border rounded-2xl rounded-tl-sm px-4 py-3">
@@ -396,35 +399,33 @@ export function ChatPage() {
       </ScrollArea>
 
       {/* Input bar */}
-      <div className="flex-shrink-0 bg-white border-t px-6 py-4">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex gap-2 items-end">
-            <div className="flex-1 relative">
-              <Input
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Message the agent… (Enter to send)"
-                className="pr-4 py-3 h-auto text-sm resize-none"
-                disabled={isStreaming}
-              />
-            </div>
-
-            {isStreaming ? (
-              <Button size="icon" variant="destructive" onClick={handleStop} className="flex-shrink-0">
-                <Square className="w-4 h-4" />
-              </Button>
-            ) : (
-              <Button size="icon" onClick={handleSubmit} disabled={!input.trim()} className="flex-shrink-0">
-                <Send className="w-4 h-4" />
-              </Button>
-            )}
+      <div className="flex-shrink-0 bg-white border-t px-4 py-3">
+        <div className="flex gap-2 items-end">
+          <div className="flex-1 relative">
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Message the agent… (Enter to send)"
+              className="pr-4 py-3 h-auto text-sm resize-none"
+              disabled={isStreaming}
+            />
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">
-            Skill: <span className="font-medium">{selectedSkill}</span> · userId: <span className="font-mono">{USER_ID}</span>
-          </p>
+
+          {isStreaming ? (
+            <Button size="icon" variant="destructive" onClick={handleStop} className="flex-shrink-0">
+              <Square className="w-4 h-4" />
+            </Button>
+          ) : (
+            <Button size="icon" onClick={handleSubmit} disabled={!input.trim()} className="flex-shrink-0">
+              <Send className="w-4 h-4" />
+            </Button>
+          )}
         </div>
+        <p className="text-[11px] text-muted-foreground mt-1.5">
+          Skill: <span className="font-medium">{selectedSkill}</span> · userId: <span className="font-mono">{USER_ID}</span>
+        </p>
       </div>
     </div>
   );
