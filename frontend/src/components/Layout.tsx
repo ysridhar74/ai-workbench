@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
-  MessageSquare, Database, History, Server, Brain, Zap,
+  MessageSquare, Database, History, Server, Brain, Zap, Sparkles,
 } from 'lucide-react';
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   { to: '/runs', label: 'Run History', icon: History },
   { to: '/mcp', label: 'MCP Servers', icon: Server },
   { to: '/memory', label: 'Memory', icon: Brain },
+  { to: '/skills', label: 'Skills', icon: Sparkles },
 ];
 
 export function Layout() {

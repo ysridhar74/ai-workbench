@@ -6,6 +6,7 @@ import { RagPage } from './pages/RagPage';
 import { RunsPage } from './pages/RunsPage';
 import { McpPage } from './pages/McpPage';
 import { MemoryPage } from './pages/MemoryPage';
+import { SkillsPage } from './pages/SkillsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="runs" element={<RunsPage />} />
             <Route path="mcp" element={<McpPage />} />
             <Route path="memory" element={<MemoryPage />} />
+            <Route path="skills" element={<SkillsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
