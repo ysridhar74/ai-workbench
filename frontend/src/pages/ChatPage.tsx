@@ -101,92 +101,111 @@ function LiveToolBadge({ tool }: { tool: string | null }) {
 
 // ── Markdown renderer ────────────────────────────────────────────────────────
 
-function MarkdownContent({ content }: { content: string }) {
+// Split markdown into segments: fenced code blocks vs everything else
+type Segment = { type: 'markdown'; text: string } | { type: 'code'; lang: string; code: string };
+
+function splitCodeBlocks(content: string): Segment[] {
+  const segments: Segment[] = [];
+  // Match fenced code blocks: ```lang\n...code...\n```
+  const fence = /^```(\w*)\n([\s\S]*?)^```/gm;
+  let last = 0;
+  let match;
+  while ((match = fence.exec(content)) !== null) {
+    if (match.index > last) {
+      segments.push({ type: 'markdown', text: content.slice(last, match.index) });
+    }
+    segments.push({ type: 'code', lang: match[1] || 'text', code: match[2] });
+    last = match.index + match[0].length;
+  }
+  if (last < content.length) {
+    segments.push({ type: 'markdown', text: content.slice(last) });
+  }
+  return segments;
+}
+
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
-        h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2 text-foreground">{children}</h1>,
-        h2: ({ children }) => <h2 className="text-base font-bold mt-4 mb-2 text-foreground">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1.5 text-foreground">{children}</h3>,
-        h4: ({ children }) => <h4 className="text-sm font-semibold mt-2 mb-1 text-foreground">{children}</h4>,
-        ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
-        li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
-        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-        em: ({ children }) => <em className="italic">{children}</em>,
-        hr: () => <hr className="my-4 border-border" />,
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-4 border-primary/30 pl-4 py-1 my-3 bg-muted/40 rounded-r text-muted-foreground italic">
-            {children}
-          </blockquote>
-        ),
-        // Tables (requires remark-gfm)
-        table: ({ children }) => (
-          <div className="overflow-x-auto my-3">
-            <table className="w-full border-collapse text-sm">{children}</table>
-          </div>
-        ),
-        thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
-        tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
-        tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
-        th: ({ children }) => (
-          <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide border border-border">
-            {children}
-          </th>
-        ),
-        td: ({ children }) => (
-          <td className="px-3 py-2 text-sm border border-border">{children}</td>
-        ),
-        // code component receives `node` from rehype which has the raw value
-        code: ({ children, className, node }: any) => {
-          const isBlock = node?.position?.start?.line !== node?.position?.end?.line
-            || className?.startsWith('language-');
+    <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
+        <span>{lang || 'code'}</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <SyntaxHighlighter
+          language={lang || 'text'}
+          style={oneLight}
+          customStyle={{
+            margin: 0,
+            padding: '14px',
+            fontSize: '12.5px',
+            lineHeight: '1.6',
+            background: '#f8f9fa',
+            borderRadius: 0,
+          }}
+          wrapLongLines={false}
+        >
+          {code}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  );
+}
 
-          if (!isBlock) {
-            return (
-              <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
-                {children}
-              </code>
-            );
-          }
-
-          const match = /language-(\w+)/.exec(className || '');
-          const language = match ? match[1] : '';
-          // Get raw text from the node's value (set by remark before React processing)
-          const raw = node?.children?.[0]?.value ?? String(children ?? '');
-
-          return (
-            <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
-              <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
-                <span>{language || 'code'}</span>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <SyntaxHighlighter
-                  language={language || 'text'}
-                  style={oneLight}
-                  customStyle={{
-                    margin: 0,
-                    padding: '14px',
-                    fontSize: '12.5px',
-                    lineHeight: '1.6',
-                    background: '#f8f9fa',
-                    borderRadius: 0,
-                  }}
-                  wrapLongLines={false}
-                >
-                  {raw.replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              </div>
-            </div>
-          );
-        },
-        pre: ({ children }) => <>{children}</>,
-      }}
-    >
-      {content}
-    </ReactMarkdown>
+function MarkdownContent({ content }: { content: string }) {
+  const segments = splitCodeBlocks(content);
+  return (
+    <div>
+      {segments.map((seg, i) =>
+        seg.type === 'code' ? (
+          <CodeBlock key={i} lang={seg.lang} code={seg.code} />
+        ) : (
+          <ReactMarkdown
+            key={i}
+            remarkPlugins={[remarkGfm]}
+            components={{
+              p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
+              h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2 text-foreground">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-base font-bold mt-4 mb-2 text-foreground">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1.5 text-foreground">{children}</h3>,
+              h4: ({ children }) => <h4 className="text-sm font-semibold mt-2 mb-1 text-foreground">{children}</h4>,
+              ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
+              li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+              hr: () => <hr className="my-4 border-border" />,
+              blockquote: ({ children }) => (
+                <blockquote className="border-l-4 border-primary/30 pl-4 py-1 my-3 bg-muted/40 rounded-r text-muted-foreground italic">
+                  {children}
+                </blockquote>
+              ),
+              table: ({ children }) => (
+                <div className="overflow-x-auto my-3">
+                  <table className="w-full border-collapse text-sm">{children}</table>
+                </div>
+              ),
+              thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
+              tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
+              tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
+              th: ({ children }) => (
+                <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide border border-border">
+                  {children}
+                </th>
+              ),
+              td: ({ children }) => (
+                <td className="px-3 py-2 text-sm border border-border">{children}</td>
+              ),
+              code: ({ children }) => (
+                <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+                  {children}
+                </code>
+              ),
+            }}
+          >
+            {seg.text}
+          </ReactMarkdown>
+        )
+      )}
+    </div>
   );
 }
 
