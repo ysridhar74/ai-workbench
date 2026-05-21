@@ -180,7 +180,8 @@ type Segment =
   | { type: 'code'; lang: string; code: string }
   | { type: 'html'; code: string }
   | { type: 'csv'; code: string }
-  | { type: 'mermaid'; code: string };
+  | { type: 'mermaid'; code: string }
+  | { type: 'json'; code: string };
 
 function splitCodeBlocks(content: string): Segment[] {
   const segments: Segment[] = [];
@@ -199,6 +200,8 @@ function splitCodeBlocks(content: string): Segment[] {
       segments.push({ type: 'csv', code });
     } else if (lang === 'mermaid') {
       segments.push({ type: 'mermaid', code });
+    } else if (lang === 'json') {
+      segments.push({ type: 'json', code });
     } else {
       segments.push({ type: 'code', lang, code });
     }
@@ -572,6 +575,309 @@ function MermaidBlock({ code }: { code: string }) {
   );
 }
 
+// ── JSON Tree Viewer ──────────────────────────────────────────────────────────
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
+
+function getType(val: JsonValue): string {
+  if (val === null) return 'null';
+  if (Array.isArray(val)) return 'array';
+  return typeof val;
+}
+
+const TYPE_BADGE: Record<string, string> = {
+  string:  'bg-emerald-50 text-emerald-700 border-emerald-200',
+  number:  'bg-blue-50 text-blue-700 border-blue-200',
+  boolean: 'bg-purple-50 text-purple-700 border-purple-200',
+  null:    'bg-slate-100 text-slate-500 border-slate-200',
+  array:   'bg-amber-50 text-amber-700 border-amber-200',
+  object:  'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+function JsonScalar({ value, type }: { value: JsonValue; type: string }) {
+  if (type === 'string') {
+    const str = String(value);
+    // Detect URL
+    if (/^https?:\/\//.test(str)) {
+      return <a href={str} target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline underline-offset-2 break-all">&quot;{str}&quot;</a>;
+    }
+    return <span className="text-emerald-600">&quot;{str}&quot;</span>;
+  }
+  if (type === 'boolean') return <span className="text-purple-600 font-medium">{String(value)}</span>;
+  if (type === 'null')    return <span className="text-slate-400 font-medium italic">null</span>;
+  if (type === 'number')  return <span className="text-blue-600">{String(value)}</span>;
+  return <span>{String(value)}</span>;
+}
+
+interface JsonNodeProps {
+  keyName?: string;
+  value: JsonValue;
+  depth: number;
+  path: string;
+  searchTerm: string;
+  defaultExpanded: boolean;
+  onCopyPath: (path: string) => void;
+}
+
+function JsonNode({ keyName, value, depth, path, searchTerm, defaultExpanded, onCopyPath }: JsonNodeProps) {
+  const type = getType(value);
+  const isComplex = type === 'object' || type === 'array';
+  const [open, setOpen] = useState(defaultExpanded || depth < 2);
+
+  const childKeys = isComplex
+    ? (Array.isArray(value) ? value.map((_, i) => String(i)) : Object.keys(value as Record<string, JsonValue>))
+    : [];
+  const childCount = childKeys.length;
+
+  const keyMatches = searchTerm && keyName?.toLowerCase().includes(searchTerm.toLowerCase());
+
+  // For non-complex values, also check value match
+  const valueStr = !isComplex ? String(value) : '';
+  const valueMatches = searchTerm && valueStr.toLowerCase().includes(searchTerm.toLowerCase());
+
+  const highlight = keyMatches || valueMatches;
+
+  return (
+    <div className={`text-[12.5px] leading-6 font-mono ${depth > 0 ? 'ml-4' : ''}`}>
+      <div
+        className={`flex items-start gap-1 group rounded px-1 -mx-1 hover:bg-slate-50 transition-colors ${highlight ? 'bg-yellow-50 hover:bg-yellow-100' : ''}`}
+      >
+        {/* Expand/collapse toggle */}
+        {isComplex ? (
+          <button
+            onClick={() => setOpen(o => !o)}
+            className="flex-shrink-0 w-4 h-6 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors"
+          >
+            <span className="text-[10px]">{open ? '▾' : '▸'}</span>
+          </button>
+        ) : (
+          <span className="flex-shrink-0 w-4" />
+        )}
+
+        {/* Key */}
+        {keyName !== undefined && (
+          <span
+            className={`flex-shrink-0 font-semibold ${keyMatches ? 'bg-yellow-200 rounded px-0.5' : 'text-slate-700'}`}
+          >
+            {/^\d+$/.test(keyName) ? (
+              <span className="text-slate-400">{keyName}</span>
+            ) : (
+              keyName
+            )}
+            <span className="text-slate-400 font-normal">: </span>
+          </span>
+        )}
+
+        {/* Value / summary */}
+        {isComplex ? (
+          <span className="flex items-center gap-1.5 flex-1 min-w-0">
+            {!open && (
+              <span className="text-slate-400">
+                {Array.isArray(value) ? '[' : '{'}
+                <span className="text-slate-500 text-[11px] mx-1">{childCount} {Array.isArray(value) ? 'items' : 'keys'}</span>
+                {Array.isArray(value) ? ']' : '}'}
+              </span>
+            )}
+            {open && <span className="text-slate-400">{Array.isArray(value) ? '[' : '{'}</span>}
+            {/* Type badge + count */}
+            <span className={`text-[10px] px-1.5 py-0 rounded border font-sans font-medium ${TYPE_BADGE[type]}`}>
+              {type} · {childCount}
+            </span>
+          </span>
+        ) : (
+          <span className={`flex-1 min-w-0 break-all ${valueMatches ? 'bg-yellow-200 rounded px-0.5' : ''}`}>
+            <JsonScalar value={value} type={type} />
+            <span className={`ml-1.5 text-[10px] px-1.5 py-0 rounded border font-sans font-medium ${TYPE_BADGE[type]}`}>
+              {type}
+              {type === 'string' && ` · ${(value as string).length}ch`}
+            </span>
+          </span>
+        )}
+
+        {/* Copy path button — appears on hover */}
+        <button
+          onClick={() => onCopyPath(path)}
+          title={`Copy path: ${path}`}
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-[10px] px-1.5 py-0 rounded bg-slate-200 hover:bg-slate-300 text-slate-600 transition-all ml-1 self-center font-sans"
+        >
+          {path || '$'}
+        </button>
+      </div>
+
+      {/* Children */}
+      {isComplex && open && (
+        <div className="border-l border-slate-200 ml-[9px] pl-0">
+          {childKeys.map(k => {
+            const childVal = Array.isArray(value)
+              ? (value as JsonValue[])[Number(k)]
+              : (value as Record<string, JsonValue>)[k];
+            const childPath = path ? `${path}.${k}` : k;
+            return (
+              <JsonNode
+                key={k}
+                keyName={k}
+                value={childVal}
+                depth={depth + 1}
+                path={childPath}
+                searchTerm={searchTerm}
+                defaultExpanded={defaultExpanded}
+                onCopyPath={onCopyPath}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Closing bracket */}
+      {isComplex && open && (
+        <div className={`font-mono text-slate-400 text-[12.5px] ${depth > 0 ? 'ml-4' : ''} px-1`}>
+          {Array.isArray(value) ? ']' : '}'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JsonTreeBlock({ code }: { code: string }) {
+  const [parsed, parseError] = (() => {
+    try { return [JSON.parse(code) as JsonValue, null]; }
+    catch (e) { return [null, String(e)]; }
+  })();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandAll, setExpandAll] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [expandKey, setExpandKey] = useState(0); // bump to force re-mount on expand/collapse all
+
+  const type = parsed !== null ? getType(parsed) : 'unknown';
+  const size = code.length;
+  const formatted = parsed !== null ? JSON.stringify(parsed, null, 2) : code;
+
+  const handleCopyPath = (path: string) => {
+    navigator.clipboard.writeText(path || '$');
+    setCopiedPath(path || '$');
+    setTimeout(() => setCopiedPath(null), 1500);
+  };
+
+  const handleExpandAll = (expand: boolean) => {
+    setExpandAll(expand);
+    setExpandKey(k => k + 1); // force JsonNode remount so useState resets
+  };
+
+  // Count total keys for summary
+  const countKeys = (v: JsonValue): number => {
+    if (v === null || typeof v !== 'object') return 1;
+    return Object.keys(v as object).reduce((acc, k) => {
+      const child = Array.isArray(v) ? (v as JsonValue[])[Number(k)] : (v as Record<string, JsonValue>)[k];
+      return acc + countKeys(child);
+    }, Object.keys(v as object).length);
+  };
+  const totalKeys = parsed !== null ? countKeys(parsed) : 0;
+
+  return (
+    <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
+      {/* Header toolbar */}
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center gap-2 flex-wrap">
+        <span className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" />
+          <span>json · {totalKeys} values · {(size / 1024).toFixed(1)} KB</span>
+        </span>
+
+        {/* Search */}
+        <div className="flex-1 min-w-[120px] max-w-[200px]">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Filter keys / values…"
+            className="w-full bg-slate-700 text-slate-200 placeholder-slate-500 text-[11px] px-2 py-0.5 rounded outline-none focus:ring-1 focus:ring-slate-500 font-sans"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+          {copiedPath && (
+            <span className="text-emerald-400 text-[10px] font-sans animate-fade-in">
+              ✓ copied: {copiedPath}
+            </span>
+          )}
+          <button
+            onClick={() => handleExpandAll(true)}
+            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors font-sans"
+          >
+            Expand all
+          </button>
+          <button
+            onClick={() => handleExpandAll(false)}
+            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors font-sans"
+          >
+            Collapse all
+          </button>
+          <CopyButton text={formatted} />
+          <button
+            onClick={() => downloadText(formatted, 'data.json', 'application/json')}
+            title="Download JSON"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors font-sans"
+          >
+            <Download className="w-3 h-3" /> JSON
+          </button>
+          <button
+            onClick={() => setShowRaw(r => !r)}
+            className="text-[10px] px-2 py-0.5 rounded bg-slate-600 hover:bg-slate-500 transition-colors font-sans"
+          >
+            {showRaw ? '🌲 tree' : '{ } raw'}
+          </button>
+        </div>
+      </div>
+
+      {/* Parse error */}
+      {parseError && (
+        <div className="px-4 py-3 bg-red-50 text-red-700 text-xs font-mono border-b">
+          ⚠ Invalid JSON: {parseError}
+          <div className="mt-1 text-red-500 opacity-70">Showing raw text below</div>
+        </div>
+      )}
+
+      {/* Tree or raw view */}
+      {showRaw || parseError ? (
+        <div style={{ overflowX: 'auto' }}>
+          <SyntaxHighlighter
+            language="json"
+            style={githubGist}
+            useInlineStyles={true}
+            customStyle={{ margin: 0, padding: '14px', fontSize: '12.5px', lineHeight: '1.6', background: '#f8f9fa', borderRadius: 0, whiteSpace: 'pre' }}
+          >
+            {formatted}
+          </SyntaxHighlighter>
+        </div>
+      ) : (
+        <div className="bg-white px-3 py-3 overflow-x-auto max-h-[520px] overflow-y-auto">
+          {/* Root type badge */}
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
+            <span className={`text-[11px] px-2 py-0.5 rounded border font-medium font-sans ${TYPE_BADGE[type]}`}>
+              {type}
+            </span>
+            {searchTerm && (
+              <span className="text-[11px] text-slate-500 font-sans">
+                highlighting matches for &ldquo;<strong>{searchTerm}</strong>&rdquo;
+              </span>
+            )}
+          </div>
+          <JsonNode
+            key={expandKey}
+            value={parsed!}
+            depth={0}
+            path=""
+            searchTerm={searchTerm}
+            defaultExpanded={expandAll}
+            onCopyPath={handleCopyPath}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MarkdownContent({ content }: { content: string }) {
   const segments = splitCodeBlocks(content);
   return (
@@ -583,6 +889,8 @@ function MarkdownContent({ content }: { content: string }) {
           <CsvBlock key={i} code={seg.code} />
         ) : seg.type === 'mermaid' ? (
           <MermaidBlock key={i} code={seg.code} />
+        ) : seg.type === 'json' ? (
+          <JsonTreeBlock key={i} code={seg.code} />
         ) : seg.type === 'code' ? (
           <CodeBlock key={i} lang={seg.lang} code={seg.code} />
         ) : (
