@@ -738,17 +738,357 @@ function JsonNode({ keyName, value, depth, path, searchTerm, defaultExpanded, on
   );
 }
 
+// ── JSON Smart Renderer ───────────────────────────────────────────────────────
+// Analyses the JSON shape and picks the best visual: form, table, stat cards, or SVG chart.
+
+type JsonObj = Record<string, JsonValue>;
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function isPlainObject(v: JsonValue): v is JsonObj {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function isArrayOfObjects(v: JsonValue): v is JsonObj[] {
+  return Array.isArray(v) && v.length > 0 && v.every(isPlainObject);
+}
+
+function isArrayOfScalars(v: JsonValue): v is (string | number | boolean | null)[] {
+  return Array.isArray(v) && v.every(x => x === null || typeof x !== 'object');
+}
+
+function detectShape(parsed: JsonValue): 'form' | 'table' | 'cards' | 'bar-chart' | 'scalar-list' {
+  if (isArrayOfObjects(parsed)) {
+    const keys = Object.keys(parsed[0]);
+    const numericKeys = keys.filter(k => parsed.every(row => typeof row[k] === 'number'));
+    if (numericKeys.length >= 1 && parsed.length >= 2 && parsed.length <= 30) return 'bar-chart';
+    return 'table';
+  }
+  if (Array.isArray(parsed) && isArrayOfScalars(parsed)) return 'scalar-list';
+  if (isPlainObject(parsed)) {
+    const vals = Object.values(parsed);
+    const allNumeric = vals.every(v => typeof v === 'number');
+    if (allNumeric && vals.length >= 2 && vals.length <= 10) return 'cards';
+    return 'form';
+  }
+  return 'form';
+}
+
+// ── FormView ─────────────────────────────────────────────────────────────────
+
+function FormFieldValue({ value, depth = 0 }: { value: JsonValue; depth?: number }) {
+  if (value === null) return <span className="text-slate-400 italic">null</span>;
+  if (typeof value === 'boolean') return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${value ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${value ? 'bg-emerald-500' : 'bg-red-400'}`} />
+      {String(value)}
+    </span>
+  );
+  if (typeof value === 'number') return (
+    <span className="font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-sm">{value.toLocaleString()}</span>
+  );
+  if (typeof value === 'string') {
+    if (/^https?:\/\//.test(value)) return <a href={value} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 break-all text-sm">{value}</a>;
+    if (/^\d{4}-\d{2}-\d{2}/.test(value)) return <span className="text-slate-700 text-sm font-medium">{new Date(value).toLocaleString()}</span>;
+    if (value.length > 120) return <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded p-2 border">{value}</p>;
+    return <span className="text-slate-800 text-sm">{value}</span>;
+  }
+  if (isArrayOfObjects(value) && depth < 2) {
+    return (
+      <div className="mt-1 rounded border border-slate-200 overflow-hidden">
+        <TableView data={value} compact />
+      </div>
+    );
+  }
+  if (Array.isArray(value)) return (
+    <div className="flex flex-wrap gap-1 mt-0.5">
+      {(value as JsonValue[]).map((item, i) => (
+        <span key={i} className="text-xs bg-slate-100 border border-slate-200 rounded px-2 py-0.5 text-slate-700">
+          <FormFieldValue value={item} depth={depth + 1} />
+        </span>
+      ))}
+    </div>
+  );
+  if (isPlainObject(value) && depth < 2) return (
+    <div className="mt-1 pl-3 border-l-2 border-primary/20 space-y-2">
+      <FormView data={value} depth={depth + 1} />
+    </div>
+  );
+  return <span className="text-slate-500 text-xs font-mono">{JSON.stringify(value)}</span>;
+}
+
+function FormView({ data, depth = 0 }: { data: JsonObj; depth?: number }) {
+  const entries = Object.entries(data);
+  return (
+    <div className={`space-y-${depth === 0 ? '4' : '2'}`}>
+      {entries.map(([key, val]) => {
+        const isComplex = typeof val === 'object' && val !== null;
+        const label = key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+        return (
+          <div key={key} className={isComplex && depth === 0 ? 'border border-slate-100 rounded-lg p-3 bg-slate-50/60' : ''}>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
+              {label}
+            </label>
+            <FormFieldValue value={val} depth={depth} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── TableView ─────────────────────────────────────────────────────────────────
+
+function TableView({ data, compact = false }: { data: JsonObj[]; compact?: boolean }) {
+  const allKeys = Array.from(new Set(data.flatMap(Object.keys)));
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const sorted = sortCol === null ? data : [...data].sort((a, b) => {
+    const av = a[sortCol] ?? '';
+    const bv = b[sortCol] ?? '';
+    const numA = parseFloat(String(av)), numB = parseFloat(String(bv));
+    const cmp = (!isNaN(numA) && !isNaN(numB)) ? numA - numB : String(av).localeCompare(String(bv));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const toggleSort = (k: string) => {
+    if (sortCol === k) setSortAsc(a => !a);
+    else { setSortCol(k); setSortAsc(true); }
+  };
+
+  const renderCell = (v: JsonValue) => {
+    if (v === null || v === undefined) return <span className="text-slate-300">—</span>;
+    if (typeof v === 'boolean') return (
+      <span className={`inline-block w-2 h-2 rounded-full ${v ? 'bg-emerald-500' : 'bg-red-400'}`} title={String(v)} />
+    );
+    if (typeof v === 'number') return <span className="font-mono text-blue-700">{v.toLocaleString()}</span>;
+    if (typeof v === 'string' && /^https?:\/\//.test(v)) return <a href={v} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs truncate max-w-[120px] block">{v}</a>;
+    if (typeof v === 'object') return <span className="text-slate-400 text-xs italic">{Array.isArray(v) ? `[${(v as JsonValue[]).length}]` : '{…}'}</span>;
+    const s = String(v);
+    return <span title={s}>{s.length > 40 ? s.slice(0, 38) + '…' : s}</span>;
+  };
+
+  const px = compact ? 'px-2 py-1' : 'px-3 py-2';
+
+  return (
+    <div className={compact ? '' : 'overflow-x-auto'}>
+      <table className="w-full text-xs border-collapse">
+        <thead className="bg-slate-100 sticky top-0 z-10">
+          <tr>
+            {allKeys.map(k => (
+              <th
+                key={k}
+                onClick={() => toggleSort(k)}
+                className={`${px} text-left font-semibold text-slate-600 border-b border-slate-200 whitespace-nowrap cursor-pointer hover:bg-slate-200 select-none`}
+              >
+                {k.replace(/_/g, ' ')}
+                {sortCol === k && <span className="ml-1 text-primary">{sortAsc ? '↑' : '↓'}</span>}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row, ri) => (
+            <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}>
+              {allKeys.map(k => (
+                <td key={k} className={`${px} border-b border-slate-100 text-slate-700`}>
+                  {renderCell(row[k] ?? null)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── StatCards ─────────────────────────────────────────────────────────────────
+
+const CARD_COLORS = [
+  { bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   num: 'text-blue-800'   },
+  { bg: 'bg-emerald-50',border: 'border-emerald-200', text: 'text-emerald-700',num: 'text-emerald-800'},
+  { bg: 'bg-violet-50', border: 'border-violet-200',  text: 'text-violet-700', num: 'text-violet-800' },
+  { bg: 'bg-amber-50',  border: 'border-amber-200',   text: 'text-amber-700',  num: 'text-amber-800'  },
+  { bg: 'bg-rose-50',   border: 'border-rose-200',    text: 'text-rose-700',   num: 'text-rose-800'   },
+  { bg: 'bg-cyan-50',   border: 'border-cyan-200',    text: 'text-cyan-700',   num: 'text-cyan-800'   },
+];
+
+function StatCards({ data }: { data: JsonObj }) {
+  const entries = Object.entries(data).filter(([, v]) => typeof v === 'number');
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+      {entries.map(([key, val], i) => {
+        const c = CARD_COLORS[i % CARD_COLORS.length];
+        const label = key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+        const num = val as number;
+        return (
+          <div key={key} className={`${c.bg} ${c.border} border rounded-xl p-4 flex flex-col gap-1`}>
+            <span className={`text-[11px] font-semibold uppercase tracking-wide ${c.text}`}>{label}</span>
+            <span className={`text-2xl font-bold ${c.num}`}>
+              {Math.abs(num) >= 1_000_000
+                ? (num / 1_000_000).toFixed(1) + 'M'
+                : Math.abs(num) >= 1_000
+                ? (num / 1_000).toFixed(1) + 'K'
+                : num % 1 === 0 ? num.toLocaleString() : num.toFixed(2)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── SVG Bar Chart ─────────────────────────────────────────────────────────────
+
+function SvgBarChart({ data }: { data: JsonObj[] }) {
+  // Find label key (first string key) and numeric keys
+  const keys = Object.keys(data[0]);
+  const labelKey = keys.find(k => typeof data[0][k] === 'string') ?? keys[0];
+  const numericKeys = keys.filter(k => data.every(row => typeof row[k] === 'number'));
+  const [activeKey, setActiveKey] = useState(numericKeys[0] ?? '');
+
+  const values = data.map(row => ({ label: String(row[labelKey] ?? ''), value: Number(row[activeKey] ?? 0) }));
+  const maxVal = Math.max(...values.map(v => v.value), 1);
+
+  // SVG layout constants
+  const W = 600, H = 280;
+  const padL = 56, padR = 16, padT = 20, padB = 64;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const barW = Math.min(40, (chartW / values.length) * 0.6);
+  const gap = chartW / values.length;
+
+  // Y-axis ticks
+  const tickCount = 4;
+  const ticks = Array.from({ length: tickCount + 1 }, (_, i) => (maxVal * i) / tickCount);
+
+  const BAR_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#ec4899'];
+
+  return (
+    <div className="p-3">
+      {/* Series selector */}
+      {numericKeys.length > 1 && (
+        <div className="flex gap-2 mb-3 flex-wrap">
+          {numericKeys.map((k, i) => (
+            <button
+              key={k}
+              onClick={() => setActiveKey(k)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${activeKey === k ? 'border-transparent text-white' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'}`}
+              style={activeKey === k ? { backgroundColor: BAR_COLORS[i % BAR_COLORS.length] } : {}}
+            >
+              {k.replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 300 }}>
+        {/* Grid lines */}
+        {ticks.map((tick, i) => {
+          const y = padT + chartH - (tick / maxVal) * chartH;
+          return (
+            <g key={i}>
+              <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#e2e8f0" strokeWidth={1} />
+              <text x={padL - 6} y={y + 4} textAnchor="end" fontSize={10} fill="#94a3b8">
+                {tick >= 1000 ? `${(tick / 1000).toFixed(0)}K` : tick.toFixed(tick % 1 === 0 ? 0 : 1)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Bars */}
+        {values.map((item, i) => {
+          const barH = (item.value / maxVal) * chartH;
+          const x = padL + gap * i + gap / 2 - barW / 2;
+          const y = padT + chartH - barH;
+          const color = BAR_COLORS[i % BAR_COLORS.length];
+          return (
+            <g key={i}>
+              <rect
+                x={x} y={y} width={barW} height={Math.max(barH, 2)}
+                rx={4} ry={4} fill={color} opacity={0.85}
+              />
+              {/* Value label on top */}
+              {barH > 16 && (
+                <text x={x + barW / 2} y={y - 4} textAnchor="middle" fontSize={10} fill="#475569" fontWeight={600}>
+                  {item.value >= 1000 ? `${(item.value / 1000).toFixed(1)}K` : item.value}
+                </text>
+              )}
+              {/* X-axis label */}
+              <text
+                x={x + barW / 2}
+                y={padT + chartH + 14}
+                textAnchor="middle"
+                fontSize={10}
+                fill="#64748b"
+                transform={`rotate(-25, ${x + barW / 2}, ${padT + chartH + 14})`}
+              >
+                {item.label.length > 12 ? item.label.slice(0, 11) + '…' : item.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* X-axis baseline */}
+        <line x1={padL} x2={W - padR} y1={padT + chartH} y2={padT + chartH} stroke="#cbd5e1" strokeWidth={1.5} />
+        {/* Y-axis */}
+        <line x1={padL} x2={padL} y1={padT} y2={padT + chartH} stroke="#cbd5e1" strokeWidth={1.5} />
+
+        {/* Active series label */}
+        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize={11} fill="#94a3b8">
+          {activeKey.replace(/_/g, ' ')}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+// ── ScalarList ────────────────────────────────────────────────────────────────
+
+function ScalarList({ data }: { data: (string | number | boolean | null)[] }) {
+  return (
+    <div className="p-4 flex flex-wrap gap-2">
+      {data.map((item, i) => (
+        <span key={i} className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 shadow-sm">
+          {item === null ? <span className="italic text-slate-400">null</span> : String(item)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── JsonSmartRenderer ─────────────────────────────────────────────────────────
+
+function JsonSmartRenderer({ parsed }: { parsed: JsonValue }) {
+  const shape = detectShape(parsed);
+
+  if (shape === 'bar-chart') return <SvgBarChart data={parsed as JsonObj[]} />;
+  if (shape === 'table')    return <div className="overflow-x-auto max-h-[480px] overflow-y-auto"><TableView data={parsed as JsonObj[]} /></div>;
+  if (shape === 'cards')    return <StatCards data={parsed as JsonObj} />;
+  if (shape === 'scalar-list') return <ScalarList data={parsed as (string | number | boolean | null)[]} />;
+  // default: form
+  return (
+    <div className="p-4 max-h-[520px] overflow-y-auto">
+      <FormView data={parsed as JsonObj} />
+    </div>
+  );
+}
+
+type JsonTab = 'smart' | 'tree' | 'raw';
+
 function JsonTreeBlock({ code }: { code: string }) {
   const [parsed, parseError] = (() => {
     try { return [JSON.parse(code) as JsonValue, null]; }
     catch (e) { return [null, String(e)]; }
   })();
 
+  const [tab, setTab] = useState<JsonTab>('smart');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandAll, setExpandAll] = useState(false);
-  const [showRaw, setShowRaw] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  const [expandKey, setExpandKey] = useState(0); // bump to force re-mount on expand/collapse all
+  const [expandKey, setExpandKey] = useState(0);
 
   const type = parsed !== null ? getType(parsed) : 'unknown';
   const size = code.length;
@@ -762,10 +1102,9 @@ function JsonTreeBlock({ code }: { code: string }) {
 
   const handleExpandAll = (expand: boolean) => {
     setExpandAll(expand);
-    setExpandKey(k => k + 1); // force JsonNode remount so useState resets
+    setExpandKey(k => k + 1);
   };
 
-  // Count total keys for summary
   const countKeys = (v: JsonValue): number => {
     if (v === null || typeof v !== 'object') return 1;
     return Object.keys(v as object).reduce((acc, k) => {
@@ -775,62 +1114,59 @@ function JsonTreeBlock({ code }: { code: string }) {
   };
   const totalKeys = parsed !== null ? countKeys(parsed) : 0;
 
+  const TAB_STYLES = (active: boolean) =>
+    `text-[10px] px-2.5 py-0.5 rounded font-sans transition-colors ${
+      active ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+    }`;
+
   return (
     <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
       {/* Header toolbar */}
       <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center gap-2 flex-wrap">
+        {/* Label */}
         <span className="flex items-center gap-1.5 flex-shrink-0">
           <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" />
           <span>json · {totalKeys} values · {(size / 1024).toFixed(1)} KB</span>
         </span>
 
-        {/* Search */}
-        <div className="flex-1 min-w-[120px] max-w-[200px]">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Filter keys / values…"
-            className="w-full bg-slate-700 text-slate-200 placeholder-slate-500 text-[11px] px-2 py-0.5 rounded outline-none focus:ring-1 focus:ring-slate-500 font-sans"
-          />
+        {/* Tab switcher */}
+        <div className="flex items-center gap-0.5 bg-slate-700 rounded p-0.5 ml-1">
+          <button className={TAB_STYLES(tab === 'smart')} onClick={() => setTab('smart')}>✦ Smart</button>
+          <button className={TAB_STYLES(tab === 'tree')}  onClick={() => setTab('tree')}>🌲 Tree</button>
+          <button className={TAB_STYLES(tab === 'raw')}   onClick={() => setTab('raw')}>{ } Raw</button>
         </div>
 
-        <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-          {copiedPath && (
-            <span className="text-emerald-400 text-[10px] font-sans animate-fade-in">
-              ✓ copied: {copiedPath}
-            </span>
-          )}
-          <button
-            onClick={() => handleExpandAll(true)}
-            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors font-sans"
-          >
-            Expand all
-          </button>
-          <button
-            onClick={() => handleExpandAll(false)}
-            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors font-sans"
-          >
-            Collapse all
-          </button>
+        {/* Tree-only controls */}
+        {tab === 'tree' && (
+          <div className="flex items-center gap-1.5">
+            <div className="min-w-[120px] max-w-[180px]">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Filter…"
+                className="w-full bg-slate-700 text-slate-200 placeholder-slate-500 text-[11px] px-2 py-0.5 rounded outline-none focus:ring-1 focus:ring-slate-500 font-sans"
+              />
+            </div>
+            <button onClick={() => handleExpandAll(true)} className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors font-sans">+all</button>
+            <button onClick={() => handleExpandAll(false)} className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors font-sans">−all</button>
+            {copiedPath && <span className="text-emerald-400 text-[10px] font-sans">✓ {copiedPath}</span>}
+          </div>
+        )}
+
+        {/* Right actions */}
+        <div className="flex items-center gap-1.5 ml-auto">
           <CopyButton text={formatted} />
           <button
             onClick={() => downloadText(formatted, 'data.json', 'application/json')}
-            title="Download JSON"
             className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors font-sans"
           >
             <Download className="w-3 h-3" /> JSON
           </button>
-          <button
-            onClick={() => setShowRaw(r => !r)}
-            className="text-[10px] px-2 py-0.5 rounded bg-slate-600 hover:bg-slate-500 transition-colors font-sans"
-          >
-            {showRaw ? '🌲 tree' : '{ } raw'}
-          </button>
         </div>
       </div>
 
-      {/* Parse error */}
+      {/* Parse error banner */}
       {parseError && (
         <div className="px-4 py-3 bg-red-50 text-red-700 text-xs font-mono border-b">
           ⚠ Invalid JSON: {parseError}
@@ -838,28 +1174,21 @@ function JsonTreeBlock({ code }: { code: string }) {
         </div>
       )}
 
-      {/* Tree or raw view */}
-      {showRaw || parseError ? (
-        <div style={{ overflowX: 'auto' }}>
-          <SyntaxHighlighter
-            language="json"
-            style={githubGist}
-            useInlineStyles={true}
-            customStyle={{ margin: 0, padding: '14px', fontSize: '12.5px', lineHeight: '1.6', background: '#f8f9fa', borderRadius: 0, whiteSpace: 'pre' }}
-          >
-            {formatted}
-          </SyntaxHighlighter>
+      {/* ── Smart view ── */}
+      {(tab === 'smart' && !parseError) && (
+        <div className="bg-white">
+          <JsonSmartRenderer parsed={parsed!} />
         </div>
-      ) : (
+      )}
+
+      {/* ── Tree view ── */}
+      {(tab === 'tree' && !parseError) && (
         <div className="bg-white px-3 py-3 overflow-x-auto max-h-[520px] overflow-y-auto">
-          {/* Root type badge */}
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
-            <span className={`text-[11px] px-2 py-0.5 rounded border font-medium font-sans ${TYPE_BADGE[type]}`}>
-              {type}
-            </span>
+            <span className={`text-[11px] px-2 py-0.5 rounded border font-medium font-sans ${TYPE_BADGE[type]}`}>{type}</span>
             {searchTerm && (
               <span className="text-[11px] text-slate-500 font-sans">
-                highlighting matches for &ldquo;<strong>{searchTerm}</strong>&rdquo;
+                highlighting &ldquo;<strong>{searchTerm}</strong>&rdquo;
               </span>
             )}
           </div>
@@ -872,6 +1201,20 @@ function JsonTreeBlock({ code }: { code: string }) {
             defaultExpanded={expandAll}
             onCopyPath={handleCopyPath}
           />
+        </div>
+      )}
+
+      {/* ── Raw view (or parse error fallback) ── */}
+      {(tab === 'raw' || parseError) && (
+        <div style={{ overflowX: 'auto' }}>
+          <SyntaxHighlighter
+            language="json"
+            style={githubGist}
+            useInlineStyles={true}
+            customStyle={{ margin: 0, padding: '14px', fontSize: '12.5px', lineHeight: '1.6', background: '#f8f9fa', borderRadius: 0, whiteSpace: 'pre' }}
+          >
+            {formatted}
+          </SyntaxHighlighter>
         </div>
       )}
     </div>
