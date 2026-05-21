@@ -53,6 +53,7 @@ export class RagService {
       openAIApiKey:
         this.config.get<string>('OPENAI_API_KEY') ||
         this.config.get<string>('EMBEDDING_API_KEY') ||
+        this.config.get<string>('LLM_API_KEY') ||
         'ollama',
       configuration: {
         baseURL:
