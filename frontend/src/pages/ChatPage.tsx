@@ -139,25 +139,32 @@ function MarkdownContent({ content }: { content: string }) {
         td: ({ children }) => (
           <td className="px-3 py-2 text-sm border border-border">{children}</td>
         ),
-        // Code blocks with syntax highlighting
-        // ReactMarkdown renders fenced blocks as <pre><code className="language-xxx">
-        // We suppress <pre> and handle everything in <code>.
-        // isBlock = has a language class OR the raw string contains newlines (unlabelled fences)
+        // Inline code only — block code is handled entirely in the `pre` component
         code: ({ children, className }) => {
-          const raw = Array.isArray(children)
-            ? children.map((c) => (typeof c === 'string' ? c : '')).join('')
-            : String(children ?? '');
-          const match = /language-(\w+)/.exec(className || '');
-          const language = match ? match[1] : '';
-          const isBlock = !!match || raw.includes('\n');
-
-          if (isBlock) {
+          // If it has a language class, it will be handled by `pre` below
+          if (className?.startsWith('language-')) return <code className={className}>{children}</code>;
+          return (
+            <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+              {children}
+            </code>
+          );
+        },
+        // Block code: ReactMarkdown wraps fenced blocks as <pre><code className="language-xxx">…</code></pre>
+        // We intercept at <pre> level and pull the raw text + language directly from the child <code> node
+        pre: ({ children }) => {
+          // Extract the <code> child
+          const child = Array.isArray(children) ? children[0] : children;
+          if (child && typeof child === 'object' && 'props' in child) {
+            const { className, children: code } = (child as any).props;
+            const match = /language-(\w+)/.exec(className || '');
+            const language = match ? match[1] : '';
+            const raw = typeof code === 'string' ? code : String(code ?? '');
             return (
               <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
                 <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
                   <span>{language || 'code'}</span>
                 </div>
-                <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
+                <div style={{ overflowX: 'auto' }}>
                   <SyntaxHighlighter
                     language={language || 'text'}
                     style={oneLight}
@@ -168,12 +175,8 @@ function MarkdownContent({ content }: { content: string }) {
                       lineHeight: '1.6',
                       background: '#f8f9fa',
                       borderRadius: 0,
-                      whiteSpace: 'pre',
-                      wordBreak: 'normal',
-                      overflowWrap: 'normal',
                     }}
                     wrapLongLines={false}
-                    codeTagProps={{ style: { whiteSpace: 'pre' } }}
                   >
                     {raw.replace(/\n$/, '')}
                   </SyntaxHighlighter>
@@ -181,15 +184,13 @@ function MarkdownContent({ content }: { content: string }) {
               </div>
             );
           }
-
+          // Fallback for plain <pre> without a code child
           return (
-            <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+            <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-3 font-mono whitespace-pre">
               {children}
-            </code>
+            </pre>
           );
         },
-        // Pass pre through transparently — SyntaxHighlighter renders its own pre inside
-        pre: ({ children }) => <>{children}</>,
       }}
     >
       {content}
