@@ -139,58 +139,50 @@ function MarkdownContent({ content }: { content: string }) {
         td: ({ children }) => (
           <td className="px-3 py-2 text-sm border border-border">{children}</td>
         ),
-        // Inline code only — block code is handled entirely in the `pre` component
-        code: ({ children, className }) => {
-          // If it has a language class, it will be handled by `pre` below
-          if (className?.startsWith('language-')) return <code className={className}>{children}</code>;
-          return (
-            <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
-              {children}
-            </code>
-          );
-        },
-        // Block code: ReactMarkdown wraps fenced blocks as <pre><code className="language-xxx">…</code></pre>
-        // We intercept at <pre> level and pull the raw text + language directly from the child <code> node
-        pre: ({ children }) => {
-          // Extract the <code> child
-          const child = Array.isArray(children) ? children[0] : children;
-          if (child && typeof child === 'object' && 'props' in child) {
-            const { className, children: code } = (child as any).props;
-            const match = /language-(\w+)/.exec(className || '');
-            const language = match ? match[1] : '';
-            const raw = typeof code === 'string' ? code : String(code ?? '');
+        // code component receives `node` from rehype which has the raw value
+        code: ({ children, className, node }: any) => {
+          const isBlock = node?.position?.start?.line !== node?.position?.end?.line
+            || className?.startsWith('language-');
+
+          if (!isBlock) {
             return (
-              <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
-                <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
-                  <span>{language || 'code'}</span>
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <SyntaxHighlighter
-                    language={language || 'text'}
-                    style={oneLight}
-                    customStyle={{
-                      margin: 0,
-                      padding: '14px',
-                      fontSize: '12.5px',
-                      lineHeight: '1.6',
-                      background: '#f8f9fa',
-                      borderRadius: 0,
-                    }}
-                    wrapLongLines={false}
-                  >
-                    {raw.replace(/\n$/, '')}
-                  </SyntaxHighlighter>
-                </div>
-              </div>
+              <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+                {children}
+              </code>
             );
           }
-          // Fallback for plain <pre> without a code child
+
+          const match = /language-(\w+)/.exec(className || '');
+          const language = match ? match[1] : '';
+          // Get raw text from the node's value (set by remark before React processing)
+          const raw = node?.children?.[0]?.value ?? String(children ?? '');
+
           return (
-            <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-3 font-mono whitespace-pre">
-              {children}
-            </pre>
+            <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
+              <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
+                <span>{language || 'code'}</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <SyntaxHighlighter
+                  language={language || 'text'}
+                  style={oneLight}
+                  customStyle={{
+                    margin: 0,
+                    padding: '14px',
+                    fontSize: '12.5px',
+                    lineHeight: '1.6',
+                    background: '#f8f9fa',
+                    borderRadius: 0,
+                  }}
+                  wrapLongLines={false}
+                >
+                  {raw.replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              </div>
+            </div>
           );
         },
+        pre: ({ children }) => <>{children}</>,
       }}
     >
       {content}
