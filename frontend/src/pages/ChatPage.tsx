@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, Sparkles, Trash2 } from 'lucide-react';
+import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, Sparkles, Trash2, Copy, Check, Download, FileSpreadsheet, Printer } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -27,6 +27,64 @@ import { cn } from '@/lib/utils';
 import { skillsApi, streamAgent } from '@/api/client';
 import { useChatStore } from '@/store/chatStore';
 import type { ChatMessage, ToolStep, Skill } from '@/types';
+
+// ── Utility: file download ────────────────────────────────────────────────────
+
+function downloadText(content: string, filename: string, mime = 'text/plain') {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCsvAsXlsx(csvText: string, filename: string) {
+  // Build a minimal XLSX using SheetJS loaded from CDN via dynamic import workaround
+  // We inline a simple CSV→Excel via data URI trick: open CSV directly as xlsx
+  // For a proper xlsx we use the blob approach with the xlsx library loaded lazily
+  import('https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs' as never).then((XLSX: any) => {
+    const wb = XLSX.utils.book_new();
+    const rows = csvText.trim().split('\n').map((row: string) =>
+      row.split(',').map((cell: string) => cell.replace(/^"|"$/g, '').replace(/""/g, '"'))
+    );
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    XLSX.writeFile(wb, filename);
+  }).catch(() => {
+    // Fallback: download as CSV if SheetJS fails
+    downloadText(csvText, filename.replace('.xlsx', '.csv'), 'text/csv');
+  });
+}
+
+// ── CopyButton ─────────────────────────────────────────────────────────────────
+
+function CopyButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  };
+  return (
+    <button
+      onClick={copy}
+      title="Copy"
+      className={cn(
+        'flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-colors',
+        copied
+          ? 'bg-green-600 text-white'
+          : 'bg-slate-700 hover:bg-slate-600 text-slate-300',
+        className,
+      )}
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
 
 // ── Tool step trace component ────────────────────────────────────────────────
 
@@ -120,7 +178,9 @@ function LiveToolBadge({ tool }: { tool: string | null }) {
 type Segment =
   | { type: 'markdown'; text: string }
   | { type: 'code'; lang: string; code: string }
-  | { type: 'html'; code: string };
+  | { type: 'html'; code: string }
+  | { type: 'csv'; code: string }
+  | { type: 'mermaid'; code: string };
 
 function splitCodeBlocks(content: string): Segment[] {
   const segments: Segment[] = [];
@@ -131,10 +191,14 @@ function splitCodeBlocks(content: string): Segment[] {
     if (match.index > last) {
       segments.push({ type: 'markdown', text: content.slice(last, match.index) });
     }
-    const lang = match[1] || 'text';
+    const lang = (match[1] || 'text').toLowerCase();
     const code = match[2];
     if (lang === 'html') {
       segments.push({ type: 'html', code });
+    } else if (lang === 'csv') {
+      segments.push({ type: 'csv', code });
+    } else if (lang === 'mermaid') {
+      segments.push({ type: 'mermaid', code });
     } else {
       segments.push({ type: 'code', lang, code });
     }
@@ -192,7 +256,6 @@ function HtmlBlock({ code }: { code: string }) {
   }, []);
 
   const onIframeLoad = () => {
-    // Fallback: try direct read first (works if same origin)
     try {
       const doc = iframeRef.current?.contentDocument;
       const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
@@ -200,20 +263,46 @@ function HtmlBlock({ code }: { code: string }) {
     } catch {}
   };
 
+  // Inject a print trigger into the page and call it
+  const handlePrint = () => {
+    const printable = code.replace('</body>', `
+<script>window.onload = function() { window.print(); }<\/script>
+</body>`);
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(printable); w.document.close(); }
+  };
+
   return (
     <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
       {/* Header */}
-      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
-        <span className="flex items-center gap-1.5">
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 flex-shrink-0">
           <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
           html · live preview
         </span>
-        <button
-          onClick={() => setShowPreview(p => !p)}
-          className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors"
-        >
-          {showPreview ? '{ } code' : '▶ preview'}
-        </button>
+        <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+          <CopyButton text={code} />
+          <button
+            onClick={() => downloadText(code, 'page.html', 'text/html')}
+            title="Download HTML"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+          >
+            <Download className="w-3 h-3" /> HTML
+          </button>
+          <button
+            onClick={handlePrint}
+            title="Print / Save as PDF"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+          >
+            <Printer className="w-3 h-3" /> PDF
+          </button>
+          <button
+            onClick={() => setShowPreview(p => !p)}
+            className="text-[10px] px-2 py-0.5 rounded bg-slate-600 hover:bg-slate-500 transition-colors"
+          >
+            {showPreview ? '{ } source' : '▶ preview'}
+          </button>
+        </div>
       </div>
 
       {/* Preview — srcdoc works correctly with sandbox */}
@@ -243,13 +332,31 @@ function HtmlBlock({ code }: { code: string }) {
   );
 }
 
+const LANG_EXT: Record<string, string> = {
+  python: 'py', javascript: 'js', typescript: 'ts', bash: 'sh',
+  json: 'json', sql: 'sql', xml: 'xml', html: 'html', css: 'css',
+  yaml: 'yaml', markdown: 'md', text: 'txt',
+};
+
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
-  const supported = ['python','javascript','typescript','bash','json','sql'];
+  const supported = ['python','javascript','typescript','bash','json','sql','xml'];
   const language = supported.includes(lang) ? lang : 'text';
+  const ext = LANG_EXT[lang] || 'txt';
+
   return (
-    <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
-      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
-        <span>{lang || 'code'}</span>
+    <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between gap-2">
+        <span className="flex-shrink-0">{lang || 'code'}</span>
+        <div className="flex items-center gap-1.5">
+          <CopyButton text={code} />
+          <button
+            onClick={() => downloadText(code, `code.${ext}`)}
+            title="Download"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+          >
+            <Download className="w-3 h-3" /> .{ext}
+          </button>
+        </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <SyntaxHighlighter
@@ -273,6 +380,198 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   );
 }
 
+// ── CSV Table Block ───────────────────────────────────────────────────────────
+
+function parseCsv(raw: string): string[][] {
+  return raw.trim().split('\n').map(line => {
+    const cols: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        cols.push(cur.trim()); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    cols.push(cur.trim());
+    return cols;
+  });
+}
+
+function CsvBlock({ code }: { code: string }) {
+  const rows = parseCsv(code);
+  const headers = rows[0] ?? [];
+  const data = rows.slice(1);
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const sorted = sortCol === null ? data : [...data].sort((a, b) => {
+    const av = a[sortCol] ?? '';
+    const bv = b[sortCol] ?? '';
+    const numA = parseFloat(av), numB = parseFloat(bv);
+    const cmp = (!isNaN(numA) && !isNaN(numB)) ? numA - numB : av.localeCompare(bv);
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const toggleSort = (i: number) => {
+    if (sortCol === i) setSortAsc(a => !a);
+    else { setSortCol(i); setSortAsc(true); }
+  };
+
+  return (
+    <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
+      {/* Header */}
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 flex-shrink-0">
+          <FileSpreadsheet className="w-3 h-3 text-green-400" />
+          csv · {data.length} rows × {headers.length} cols
+        </span>
+        <div className="flex items-center gap-1.5">
+          <CopyButton text={code} />
+          <button
+            onClick={() => downloadText(code, 'data.csv', 'text/csv')}
+            title="Download CSV"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+          >
+            <Download className="w-3 h-3" /> CSV
+          </button>
+          <button
+            onClick={() => downloadCsvAsXlsx(code, 'data.xlsx')}
+            title="Download Excel"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white transition-colors"
+          >
+            <FileSpreadsheet className="w-3 h-3" /> Excel
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead className="sticky top-0 bg-slate-100 z-10">
+            <tr>
+              {headers.map((h, i) => (
+                <th
+                  key={i}
+                  onClick={() => toggleSort(i)}
+                  className="px-3 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 whitespace-nowrap cursor-pointer hover:bg-slate-200 select-none"
+                >
+                  {h}
+                  {sortCol === i && (
+                    <span className="ml-1 text-primary">{sortAsc ? '↑' : '↓'}</span>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                {headers.map((_, ci) => (
+                  <td key={ci} className="px-3 py-1.5 border-b border-slate-100 whitespace-nowrap text-slate-700">
+                    {row[ci] ?? ''}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Mermaid Diagram Block ─────────────────────────────────────────────────────
+
+function MermaidBlock({ code }: { code: string }) {
+  const [showSource, setShowSource] = useState(false);
+
+  // Build a self-contained HTML page that renders the Mermaid diagram
+  const mermaidHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #fff; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+  .mermaid { max-width: 100%; }
+</style>
+</head>
+<body>
+<div class="mermaid">${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose' });
+  mermaid.run().then(() => {
+    var h = document.body.scrollHeight;
+    window.parent.postMessage({ type: 'iframe-height', height: h }, '*');
+    setTimeout(function() {
+      h = document.body.scrollHeight;
+      window.parent.postMessage({ type: 'iframe-height', height: h }, '*');
+    }, 500);
+  });
+<\/script>
+</body>
+</html>`;
+
+  const [height, setHeight] = useState(120);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'iframe-height' && e.data.height > 50) {
+        setHeight(e.data.height + 24);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  return (
+    <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="w-2 h-2 rounded-full bg-purple-400 inline-block" />
+          mermaid · diagram
+        </span>
+        <div className="flex items-center gap-1.5">
+          <CopyButton text={code} />
+          <button
+            onClick={() => setShowSource(s => !s)}
+            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors"
+          >
+            {showSource ? '▶ diagram' : '{ } source'}
+          </button>
+        </div>
+      </div>
+      {showSource ? (
+        <div style={{ overflowX: 'auto' }}>
+          <SyntaxHighlighter
+            language="text"
+            style={githubGist}
+            useInlineStyles={true}
+            customStyle={{ margin: 0, padding: '14px', fontSize: '12.5px', lineHeight: '1.6', background: '#f8f9fa', borderRadius: 0, whiteSpace: 'pre' }}
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      ) : (
+        <iframe
+          srcDoc={mermaidHtml}
+          sandbox="allow-scripts"
+          className="w-full border-0 bg-white block"
+          style={{ height: `${height}px`, transition: 'height 0.3s ease' }}
+          title="mermaid-diagram"
+        />
+      )}
+    </div>
+  );
+}
+
 function MarkdownContent({ content }: { content: string }) {
   const segments = splitCodeBlocks(content);
   return (
@@ -280,6 +579,10 @@ function MarkdownContent({ content }: { content: string }) {
       {segments.map((seg, i) =>
         seg.type === 'html' ? (
           <HtmlBlock key={i} code={seg.code} />
+        ) : seg.type === 'csv' ? (
+          <CsvBlock key={i} code={seg.code} />
+        ) : seg.type === 'mermaid' ? (
+          <MermaidBlock key={i} code={seg.code} />
         ) : seg.type === 'code' ? (
           <CodeBlock key={i} lang={seg.lang} code={seg.code} />
         ) : (

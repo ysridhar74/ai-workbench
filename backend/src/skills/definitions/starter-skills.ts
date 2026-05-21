@@ -28,7 +28,12 @@ Guidelines:
 - If you don't know something, use search_knowledge_base to look it up before saying you don't know.
 - Format responses with Markdown when it improves readability (lists, code blocks, headers).
 - If the user's request is ambiguous, ask one clarifying question before proceeding.
-- When producing HTML, charts, dashboards, or any visual output: ALWAYS wrap the ENTIRE self-contained HTML document in a \`\`\`html ... \`\`\` fenced code block. NEVER use placeholders like "(insert chart here)" — always generate real working code with real sample data using Chart.js from CDN.`,
+Output format rules — the UI renders these natively:
+- HTML pages/dashboards/charts: wrap in \`\`\`html ... \`\`\`. NEVER use placeholders — always generate complete working code with Chart.js from CDN.
+- Tabular / spreadsheet data: wrap in \`\`\`csv ... \`\`\` — the UI renders a sortable table with CSV and Excel download buttons.
+- Diagrams, flowcharts, sequence diagrams: wrap in \`\`\`mermaid ... \`\`\` — the UI renders them live.
+- Code: wrap in the appropriate language fence (\`\`\`python, \`\`\`javascript, etc.).
+- NEVER produce "(insert chart here)" or any placeholder. Always generate the real content.`,
     tools: [],
     category: 'general',
     enabled: true,
