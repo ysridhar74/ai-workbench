@@ -154,26 +154,30 @@ function MarkdownContent({ content }: { content: string }) {
 
           if (isBlock) {
             return (
-              <div className="my-3 rounded-lg overflow-hidden border border-border">
+              <div className="my-3 rounded-lg border border-border w-full" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                 <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
                   <span>{language || 'code'}</span>
                 </div>
-                <SyntaxHighlighter
-                  language={language || 'text'}
-                  style={oneLight}
-                  customStyle={{
-                    margin: 0,
-                    padding: '14px',
-                    fontSize: '12.5px',
-                    lineHeight: '1.6',
-                    background: '#f8f9fa',
-                    borderRadius: 0,
-                  }}
-                  wrapLongLines={false}
-                  PreTag="div"
-                >
-                  {raw.replace(/\n$/, '')}
-                </SyntaxHighlighter>
+                <div className="overflow-x-auto w-full">
+                  <SyntaxHighlighter
+                    language={language || 'text'}
+                    style={oneLight}
+                    customStyle={{
+                      margin: 0,
+                      padding: '14px',
+                      fontSize: '12.5px',
+                      lineHeight: '1.6',
+                      background: '#f8f9fa',
+                      borderRadius: 0,
+                      width: '100%',
+                      boxSizing: 'border-box',
+                    }}
+                    wrapLongLines={false}
+                    PreTag="div"
+                  >
+                    {raw.replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                </div>
               </div>
             );
           }
@@ -213,7 +217,7 @@ function UserContent({ content }: { content: string }) {
     return (
       <div className="text-left">
         <p className="text-xs text-primary-foreground/70 mb-2 font-medium">Code</p>
-        <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-x-auto">
+        <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words overflow-x-auto max-w-full">
           {content}
         </pre>
       </div>
@@ -231,8 +235,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   if (isUser) {
     return (
       <div className="flex justify-end px-6 py-2 animate-fade-in">
-        <div className="max-w-[80%]">
-          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm">
+        <div className="max-w-[80%] min-w-0 overflow-hidden">
+          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm overflow-hidden">
             <UserContent content={msg.content} />
           </div>
         </div>
@@ -249,7 +253,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       </div>
 
       {/* Content fills remaining width */}
-      <div className="flex-1 min-w-0 space-y-2">
+      <div className="flex-1 min-w-0 overflow-hidden space-y-2">
         <div className="text-sm text-foreground">
           {msg.isStreaming && !msg.content ? (
             <span className="flex gap-1 items-center h-5 mt-1">
