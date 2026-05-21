@@ -27,6 +27,13 @@ export class SkillsModule implements OnModuleInit {
       if (!exists) {
         await this.skillsService.create(skill);
         this.logger.log(`Seeded skill: "${skill.name}"`);
+      } else {
+        // Always sync the prompt template so changes here take effect on restart
+        await this.skillsService.update(skill.name, {
+          promptTemplate: skill.promptTemplate,
+          description: skill.description,
+        });
+        this.logger.log(`Updated skill: "${skill.name}"`);
       }
     }
     const all = await this.skillsService.findAll();

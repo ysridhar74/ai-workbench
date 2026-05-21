@@ -86,13 +86,20 @@ export class AgentService {
 
     // ── 1. Build system prompt + message history ────────────────────────────
     const baseSystemPrompt = this.skills.buildSystemPrompt(skill);
+
+    // Append RAG usage instructions when the tool is available
+    const ragInstruction = dto.useRag !== false
+      ? `\n\nKNOWLEDGE BASE: You have access to a search_knowledge_base tool. ALWAYS use it to look up information before answering questions about topics that may be documented. Do not answer from memory alone when the knowledge base might have relevant content.`
+      : '';
+
     // Inject long-term memory context when a userId is present
     const memoryContext = dto.userId
       ? await this.memory.buildContext(dto.userId)
       : { systemFragment: '' };
-    const systemPrompt = memoryContext.systemFragment
-      ? `${baseSystemPrompt}\n\n${memoryContext.systemFragment}`
-      : baseSystemPrompt;
+    const systemPrompt = [
+      baseSystemPrompt + ragInstruction,
+      memoryContext.systemFragment,
+    ].filter(Boolean).join('\n\n');
 
     const messageHistory = (dto.history ?? []).map((h) =>
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
@@ -108,7 +115,8 @@ export class AgentService {
     const tools: any[] = [...ragTool, ...mcpTools];
 
     // ── 3. Build agent (cached per model + tool fingerprint) ────────────────
-    const cacheKey = `${model}:${tools.map((t) => t.name).join(',')}`;
+    // Include rag/tools flags in the key so toggling them creates a fresh agent
+    const cacheKey = `${model}:rag=${dto.useRag ?? true}:tools=${dto.useTools ?? true}:${tools.map((t) => t.name).join(',')}`;
     if (!this.agentCache.has(cacheKey)) {
       const llm = buildLlm(this.config, model);
       this.agentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
@@ -212,12 +220,18 @@ export class AgentService {
     const model = skill.preferredModel ?? this.config.getOrThrow<string>('LLM_MODEL');
 
     const baseSystemPrompt = this.skills.buildSystemPrompt(skill);
+
+    const ragInstruction = dto.useRag !== false
+      ? `\n\nKNOWLEDGE BASE: You have access to a search_knowledge_base tool. ALWAYS use it to look up information before answering questions about topics that may be documented. Do not answer from memory alone when the knowledge base might have relevant content.`
+      : '';
+
     const memoryContext = dto.userId
       ? await this.memory.buildContext(dto.userId)
       : { systemFragment: '' };
-    const systemPrompt = memoryContext.systemFragment
-      ? `${baseSystemPrompt}\n\n${memoryContext.systemFragment}`
-      : baseSystemPrompt;
+    const systemPrompt = [
+      baseSystemPrompt + ragInstruction,
+      memoryContext.systemFragment,
+    ].filter(Boolean).join('\n\n');
 
     const messageHistory = (dto.history ?? []).map((h) =>
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
@@ -229,7 +243,7 @@ export class AgentService {
       : [];
     const tools: any[] = [...ragTool, ...mcpTools];
 
-    const cacheKey = `${model}:${tools.map((t) => t.name).join(',')}:stream`;
+    const cacheKey = `${model}:rag=${dto.useRag ?? true}:tools=${dto.useTools ?? true}:${tools.map((t) => t.name).join(',')}:stream`;
     if (!this.streamingAgentCache.has(cacheKey)) {
       const llm = buildLlm(this.config, model, true);
       this.streamingAgentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
