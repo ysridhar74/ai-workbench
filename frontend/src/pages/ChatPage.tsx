@@ -157,7 +157,7 @@ function MarkdownContent({ content }: { content: string }) {
                 <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
                   <span>{language || 'code'}</span>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
+                <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
                   <SyntaxHighlighter
                     language={language || 'text'}
                     style={oneLight}
@@ -168,9 +168,12 @@ function MarkdownContent({ content }: { content: string }) {
                       lineHeight: '1.6',
                       background: '#f8f9fa',
                       borderRadius: 0,
+                      whiteSpace: 'pre',
+                      wordBreak: 'normal',
+                      overflowWrap: 'normal',
                     }}
                     wrapLongLines={false}
-                    PreTag="div"
+                    codeTagProps={{ style: { whiteSpace: 'pre' } }}
                   >
                     {raw.replace(/\n$/, '')}
                   </SyntaxHighlighter>
@@ -185,7 +188,7 @@ function MarkdownContent({ content }: { content: string }) {
             </code>
           );
         },
-        // Suppress the wrapping <pre> — our code component handles the block styling
+        // Pass pre through transparently — SyntaxHighlighter renders its own pre inside
         pre: ({ children }) => <>{children}</>,
       }}
     >
