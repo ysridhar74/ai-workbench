@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, User, Sparkles } from 'lucide-react';
+import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, User, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { skillsApi, streamAgent } from '@/api/client';
+import { useChatStore } from '@/store/chatStore';
 import type { ChatMessage, ToolStep, Skill } from '@/types';
 
 // ── Tool step trace component ────────────────────────────────────────────────
@@ -171,11 +172,20 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 const USER_ID = 'user1'; // TODO: real auth
 
 export function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const {
+    messages,
+    selectedSkill,
+    useRag,
+    useTools,
+    addMessage,
+    updateLastAssistant,
+    clearMessages,
+    setSelectedSkill,
+    setUseRag,
+    setUseTools,
+  } = useChatStore();
+
   const [input, setInput] = useState('');
-  const [selectedSkill, setSelectedSkill] = useState('general-assistant');
-  const [useRag, setUseRag] = useState(true);
-  const [useTools, setUseTools] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -191,20 +201,6 @@ export function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const addMessage = useCallback((msg: ChatMessage) => {
-    setMessages(prev => [...prev, msg]);
-  }, []);
-
-  const updateLastAssistant = useCallback((updater: (msg: ChatMessage) => ChatMessage) => {
-    setMessages(prev => {
-      const copy = [...prev];
-      for (let i = copy.length - 1; i >= 0; i--) {
-        if (copy[i].role === 'assistant') { copy[i] = updater(copy[i]); break; }
-      }
-      return copy;
-    });
-  }, []);
 
   const handleSubmit = useCallback(() => {
     const text = input.trim();
@@ -276,7 +272,7 @@ export function ChatPage() {
       },
     );
     stopRef.current = stop;
-  }, [input, isStreaming, messages, selectedSkill, useRag, useTools, addMessage, updateLastAssistant]);
+  }, [input, isStreaming, messages, selectedSkill, useRag, useTools, addMessage, updateLastAssistant, clearMessages]);
 
   const handleStop = () => {
     stopRef.current?.();
@@ -314,9 +310,21 @@ export function ChatPage() {
             </SelectContent>
           </Select>
 
+          {/* Clear chat */}
+          {messages.length > 0 && (
+            <button
+              onClick={clearMessages}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border bg-muted border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+              title="Clear chat"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear
+            </button>
+          )}
+
           {/* RAG toggle */}
           <button
-            onClick={() => setUseRag(v => !v)}
+            onClick={() => setUseRag(!useRag)}
             className={cn(
               'flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors',
               useRag ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-muted border-border text-muted-foreground',
@@ -328,7 +336,7 @@ export function ChatPage() {
 
           {/* Tools toggle */}
           <button
-            onClick={() => setUseTools(v => !v)}
+            onClick={() => setUseTools(!useTools)}
             className={cn(
               'flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors',
               useTools ? 'bg-violet-50 border-violet-200 text-violet-700' : 'bg-muted border-border text-muted-foreground',
