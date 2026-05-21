@@ -106,7 +106,6 @@ type Segment = { type: 'markdown'; text: string } | { type: 'code'; lang: string
 
 function splitCodeBlocks(content: string): Segment[] {
   const segments: Segment[] = [];
-  // Match fenced code blocks — handles optional \r, spaces before closing fence
   const fence = /```(\w*)\r?\n([\s\S]*?)```/g;
   let last = 0;
   let match;
@@ -116,10 +115,13 @@ function splitCodeBlocks(content: string): Segment[] {
     }
     segments.push({ type: 'code', lang: match[1] || 'text', code: match[2] });
     last = match.index + match[0].length;
+    console.log('CODE BLOCK FOUND:', match[1], JSON.stringify(match[2].slice(0, 100)));
   }
   if (last < content.length) {
     segments.push({ type: 'markdown', text: content.slice(last) });
   }
+  console.log('TOTAL SEGMENTS:', segments.length, segments.map(s => s.type));
+  console.log('FULL CONTENT:', JSON.stringify(content.slice(0, 200)));
   return segments;
 }
 
@@ -194,11 +196,19 @@ function MarkdownContent({ content }: { content: string }) {
               td: ({ children }) => (
                 <td className="px-3 py-2 text-sm border border-border">{children}</td>
               ),
-              code: ({ children }) => (
-                <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
-                  {children}
-                </code>
-              ),
+              code: ({ children, className }: any) => {
+                const lang = /language-(\w+)/.exec(className || '')?.[1] || '';
+                // Fallback: if regex missed a fenced block, render it properly here
+                if (className?.startsWith('language-')) {
+                  return <CodeBlock lang={lang} code={String(children ?? '').replace(/\n$/, '')} />;
+                }
+                return (
+                  <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+                    {children}
+                  </code>
+                );
+              },
+              pre: ({ children }) => <>{children}</>,
             }}
           >
             {seg.text}
