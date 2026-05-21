@@ -163,12 +163,12 @@ export function RunsPage() {
         <History className="w-4 h-4 text-primary" />
         <h1 className="font-semibold text-sm">Run History</h1>
         <div className="ml-auto flex items-center gap-2">
-          <Select value={skillFilter} onValueChange={v => { setSkillFilter(v); setPage(0); }}>
+          <Select value={skillFilter || '__all__'} onValueChange={v => { setSkillFilter(v === '__all__' ? '' : v); setPage(0); }}>
             <SelectTrigger className="w-44 h-8 text-xs">
               <SelectValue placeholder="All skills" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All skills</SelectItem>
+              <SelectItem value="__all__">All skills</SelectItem>
               {skills.map((s: { name: string }) => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
