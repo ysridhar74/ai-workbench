@@ -8,7 +8,6 @@ import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { skillsApi, streamAgent } from '@/api/client';
 import { useChatStore } from '@/store/chatStore';
@@ -154,11 +153,11 @@ function MarkdownContent({ content }: { content: string }) {
 
           if (isBlock) {
             return (
-              <div className="my-3 rounded-lg border border-border w-full" style={{ maxWidth: '100%', overflow: 'hidden' }}>
-                <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
+              <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
+                <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
                   <span>{language || 'code'}</span>
                 </div>
-                <div className="overflow-x-auto w-full">
+                <div style={{ overflowX: 'auto' }}>
                   <SyntaxHighlighter
                     language={language || 'text'}
                     style={oneLight}
@@ -169,8 +168,6 @@ function MarkdownContent({ content }: { content: string }) {
                       lineHeight: '1.6',
                       background: '#f8f9fa',
                       borderRadius: 0,
-                      width: '100%',
-                      boxSizing: 'border-box',
                     }}
                     wrapLongLines={false}
                     PreTag="div"
@@ -234,9 +231,9 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end px-6 py-2 animate-fade-in">
-        <div className="max-w-[80%] min-w-0 overflow-hidden">
-          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm overflow-hidden">
+      <div className="w-full flex justify-end px-6 py-2 animate-fade-in">
+        <div className="max-w-[78%] min-w-0">
+          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm">
             <UserContent content={msg.content} />
           </div>
         </div>
@@ -246,14 +243,14 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
   // Assistant message — full width left-aligned
   return (
-    <div className="flex gap-3 px-6 py-2 animate-fade-in">
+    <div className="w-full flex gap-3 px-6 py-2 animate-fade-in">
       {/* Avatar */}
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center mt-0.5">
         <Bot className="w-4 h-4 text-white" />
       </div>
 
-      {/* Content fills remaining width */}
-      <div className="flex-1 min-w-0 overflow-hidden space-y-2">
+      {/* Content — takes remaining width, never grows wider than parent */}
+      <div className="min-w-0 flex-1 space-y-2" style={{ width: 0 }}>
         <div className="text-sm text-foreground">
           {msg.isStreaming && !msg.content ? (
             <span className="flex gap-1 items-center h-5 mt-1">
@@ -530,7 +527,7 @@ export function ChatPage() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 py-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden py-4 w-full">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full py-24 text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
@@ -558,7 +555,7 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="space-y-1 pb-2">
+        <div className="space-y-1 pb-2 w-full">
           {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
 
           {/* Live tool indicator */}
@@ -574,7 +571,7 @@ export function ChatPage() {
           )}
           <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Input bar */}
       <div className="flex-shrink-0 bg-white border-t px-6 py-3">
