@@ -4,7 +4,8 @@ import { OpenAIEmbeddings } from '@langchain/openai';
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { Document } from '@langchain/core/documents';
-import { DynamicTool } from '@langchain/core/tools';
+import { DynamicStructuredTool } from '@langchain/core/tools';
+import { z } from 'zod';
 import { MongoClient } from 'mongodb';
 
 export interface IngestResult {
@@ -150,54 +151,37 @@ export class RagService {
    * If nothing scores high enough, returns a clear "no results" message
    * so the agent knows to rely on its own knowledge instead.
    */
-  asLangChainTool(defaultNamespace = 'default'): DynamicTool {
+  asLangChainTool(defaultNamespace = 'default'): DynamicStructuredTool {
     const scoreThreshold = parseFloat(
       this.config.get<string>('RAG_SCORE_THRESHOLD', '0.70'),
     );
+    const ragService = this;
 
-    return new DynamicTool({
+    const schema = z.object({
+      query: z.string().describe('The search query to find relevant documents'),
+      namespace: z.string().optional().describe('Knowledge base namespace, defaults to "default"'),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new DynamicStructuredTool<any>({
       name: 'search_knowledge_base',
       description:
         'Search the internal knowledge base for relevant information. ' +
         'Call this when the user asks about topics that may be covered in company documents, ' +
         'product documentation, or any ingested knowledge. ' +
-        'Input: a JSON string {"query": "your search query", "namespace": "default"} ' +
-        'or just a plain search query string.',
-      func: async (rawInput: string): Promise<string> => {
+        'Always call this tool before answering questions about specific topics.',
+      schema,
+      func: async ({ query, namespace }: { query: string; namespace?: string }): Promise<string> => {
+        const ns = namespace ?? defaultNamespace;
+        ragService.logger.log(`RAG search — query: "${query}", namespace: "${ns}"`);
         try {
-          // Recursively unwrap until we have a plain {query, namespace} object or string.
-          // LangGraph wraps DynamicTool inputs as {"input": "<json>"} one or more levels deep.
-          const unwrap = (v: unknown): { query: string; namespace: string } => {
-            if (typeof v === 'string') {
-              try { return unwrap(JSON.parse(v)); } catch { return { query: v, namespace: defaultNamespace }; }
-            }
-            if (v && typeof v === 'object') {
-              const o = v as Record<string, unknown>;
-              // Unwrap LangGraph wrapper
-              if (o.input !== undefined) return unwrap(o.input);
-              // Standard shape
-              const query = typeof o.query === 'string' ? o.query : JSON.stringify(o);
-              const namespace = typeof o.namespace === 'string' ? o.namespace : defaultNamespace;
-              return { query, namespace };
-            }
-            return { query: String(v ?? ''), namespace: defaultNamespace };
-          };
-
-          const { query, namespace } = unwrap(rawInput);
-          this.logger.debug(`RAG search — query: "${query}", namespace: "${namespace}"`);
-
-          if (!query.trim()) return 'Knowledge base search failed: empty query provided.';
-
-          const results = await this.retrieveWithScores(query, { namespace, topK: 4 });
-
-          // Filter by score threshold (Option 1 as a safety layer inside Option 3)
+          const results = await ragService.retrieveWithScores(query, { namespace: ns, topK: 4 });
           const relevant = results.filter(([, score]) => score >= scoreThreshold);
 
           if (relevant.length === 0) {
             return `No relevant results found in the knowledge base for: "${query}". Answer from your own knowledge.`;
           }
 
-          // Format results for the model
           return relevant
             .map(([doc, score], i) =>
               `[Result ${i + 1}] (relevance: ${(score * 100).toFixed(0)}%)\n` +
