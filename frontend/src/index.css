@@ -33,7 +33,8 @@
     color: hsl(var(--foreground));
     -webkit-font-smoothing: antialiased;
   }
-  #root { height: 100vh; display: flex; flex-direction: column; }
+  html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
+  #root { width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }

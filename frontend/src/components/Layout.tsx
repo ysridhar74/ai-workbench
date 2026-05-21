@@ -14,7 +14,7 @@ const NAV = [
 
 export function Layout() {
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex w-full h-full bg-background overflow-hidden">
       {/* Sidebar */}
       <aside className="w-56 flex-shrink-0 border-r bg-white flex flex-col">
         {/* Logo */}
