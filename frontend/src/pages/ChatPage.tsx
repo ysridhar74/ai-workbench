@@ -133,16 +133,24 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               <span className="typing-dot" />
             </span>
           ) : (
-            <div className="prose prose-sm max-w-none">
+            <div className="text-sm leading-relaxed text-left">
               <ReactMarkdown
                 components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  h1: ({ children }) => <h1 className="text-base font-semibold mt-3 mb-1">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-sm font-semibold mt-3 mb-1">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-sm font-medium mt-2 mb-1">{children}</h3>,
+                  ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
+                  li: ({ children }) => <li className="text-sm">{children}</li>,
+                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                   code: ({ children, className }) => {
                     const isBlock = className?.includes('language-');
                     return isBlock
-                      ? <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-2"><code>{children}</code></pre>
+                      ? <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-2 text-left"><code>{children}</code></pre>
                       : <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
                   },
-                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-3 text-muted-foreground italic my-2">{children}</blockquote>,
                 }}
               >
                 {msg.content}
