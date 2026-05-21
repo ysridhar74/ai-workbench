@@ -148,25 +148,56 @@ function splitCodeBlocks(content: string): Segment[] {
 
 // ── HTML Preview Block ───────────────────────────────────────────────────────
 
+// Inject a postMessage reporter into the HTML so the iframe can tell us its height
+function injectHeightReporter(html: string): string {
+  const script = `
+<script>
+(function() {
+  function report() {
+    var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+    window.parent.postMessage({ type: 'iframe-height', height: h }, '*');
+  }
+  // Report on load, and again after a delay for charts/JS
+  window.addEventListener('load', function() {
+    report();
+    setTimeout(report, 300);
+    setTimeout(report, 800);
+    setTimeout(report, 1500);
+  });
+  // Also observe DOM changes (e.g. chart renders after fetch)
+  if (window.ResizeObserver) {
+    new ResizeObserver(report).observe(document.body);
+  }
+})();
+<\/script>`;
+  // Inject before </body> or </html>, or append at end
+  if (html.includes('</body>')) return html.replace('</body>', script + '</body>');
+  if (html.includes('</html>')) return html.replace('</html>', script + '</html>');
+  return html + script;
+}
+
 function HtmlBlock({ code }: { code: string }) {
   const [showPreview, setShowPreview] = useState(true);
   const [height, setHeight] = useState(200);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const onIframeLoad = () => {
-    // Poll until content fully renders (charts/JS may paint after load)
-    let attempts = 0;
-    const measure = () => {
-      try {
-        const doc = iframeRef.current?.contentDocument;
-        const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
-        if (h && h > 50) {
-          setHeight(h + 16);
-        }
-        if (attempts++ < 8) setTimeout(measure, 200);
-      } catch {}
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'iframe-height' && e.data.height > 50) {
+        setHeight(e.data.height + 24);
+      }
     };
-    measure();
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const onIframeLoad = () => {
+    // Fallback: try direct read first (works if same origin)
+    try {
+      const doc = iframeRef.current?.contentDocument;
+      const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
+      if (h && h > 50) setHeight(h + 24);
+    } catch {}
   };
 
   return (
@@ -189,7 +220,7 @@ function HtmlBlock({ code }: { code: string }) {
       {showPreview ? (
         <iframe
           ref={iframeRef}
-          srcDoc={code}
+          srcDoc={injectHeightReporter(code)}
           sandbox="allow-scripts allow-forms"
           onLoad={onIframeLoad}
           className="w-full border-0 bg-white block"
