@@ -10,6 +10,7 @@ import typescript from 'react-syntax-highlighter/dist/esm/languages/hljs/typescr
 import bash from 'react-syntax-highlighter/dist/esm/languages/hljs/bash';
 import json from 'react-syntax-highlighter/dist/esm/languages/hljs/json';
 import sql from 'react-syntax-highlighter/dist/esm/languages/hljs/sql';
+import xml from 'react-syntax-highlighter/dist/esm/languages/hljs/xml';
 import { githubGist } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
 SyntaxHighlighter.registerLanguage('python', python);
@@ -18,6 +19,7 @@ SyntaxHighlighter.registerLanguage('typescript', typescript);
 SyntaxHighlighter.registerLanguage('bash', bash);
 SyntaxHighlighter.registerLanguage('json', json);
 SyntaxHighlighter.registerLanguage('sql', sql);
+SyntaxHighlighter.registerLanguage('xml', xml);
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -115,7 +117,10 @@ function LiveToolBadge({ tool }: { tool: string | null }) {
 // ── Markdown renderer ────────────────────────────────────────────────────────
 
 // Split markdown into segments: fenced code blocks vs everything else
-type Segment = { type: 'markdown'; text: string } | { type: 'code'; lang: string; code: string };
+type Segment =
+  | { type: 'markdown'; text: string }
+  | { type: 'code'; lang: string; code: string }
+  | { type: 'html'; code: string };
 
 function splitCodeBlocks(content: string): Segment[] {
   const segments: Segment[] = [];
@@ -126,13 +131,85 @@ function splitCodeBlocks(content: string): Segment[] {
     if (match.index > last) {
       segments.push({ type: 'markdown', text: content.slice(last, match.index) });
     }
-    segments.push({ type: 'code', lang: match[1] || 'text', code: match[2] });
+    const lang = match[1] || 'text';
+    const code = match[2];
+    if (lang === 'html') {
+      segments.push({ type: 'html', code });
+    } else {
+      segments.push({ type: 'code', lang, code });
+    }
     last = match.index + match[0].length;
   }
   if (last < content.length) {
     segments.push({ type: 'markdown', text: content.slice(last) });
   }
   return segments;
+}
+
+// ── HTML Preview Block ───────────────────────────────────────────────────────
+
+function HtmlBlock({ code }: { code: string }) {
+  const [showPreview, setShowPreview] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Auto-resize iframe to content height
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !showPreview) return;
+    const update = () => {
+      try {
+        const h = iframe.contentDocument?.body?.scrollHeight;
+        if (h) iframe.style.height = h + 'px';
+      } catch {}
+    };
+    iframe.onload = update;
+    // Write content
+    try {
+      iframe.contentDocument?.open();
+      iframe.contentDocument?.write(code);
+      iframe.contentDocument?.close();
+      update();
+    } catch {}
+  }, [code, showPreview]);
+
+  return (
+    <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
+      {/* Header */}
+      <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
+        <span>html</span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowPreview(p => !p)}
+            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors"
+          >
+            {showPreview ? '{ } code' : '▶ preview'}
+          </button>
+        </div>
+      </div>
+
+      {/* Preview */}
+      {showPreview ? (
+        <iframe
+          ref={iframeRef}
+          sandbox="allow-scripts allow-forms"
+          className="w-full border-0 bg-white"
+          style={{ minHeight: '100px', height: '200px' }}
+          title="html-preview"
+        />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <SyntaxHighlighter
+            language="xml"
+            style={githubGist}
+            useInlineStyles={true}
+            customStyle={{ margin: 0, padding: '14px', fontSize: '12.5px', lineHeight: '1.6', background: '#f8f9fa', borderRadius: 0, whiteSpace: 'pre' }}
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
@@ -170,7 +247,9 @@ function MarkdownContent({ content }: { content: string }) {
   return (
     <div>
       {segments.map((seg, i) =>
-        seg.type === 'code' ? (
+        seg.type === 'html' ? (
+          <HtmlBlock key={i} code={seg.code} />
+        ) : seg.type === 'code' ? (
           <CodeBlock key={i} lang={seg.lang} code={seg.code} />
         ) : (
           <ReactMarkdown
