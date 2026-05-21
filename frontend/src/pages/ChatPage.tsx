@@ -150,50 +150,38 @@ function splitCodeBlocks(content: string): Segment[] {
 
 function HtmlBlock({ code }: { code: string }) {
   const [showPreview, setShowPreview] = useState(true);
+  const [height, setHeight] = useState(300);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Auto-resize iframe to content height
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe || !showPreview) return;
-    const update = () => {
-      try {
-        const h = iframe.contentDocument?.body?.scrollHeight;
-        if (h) iframe.style.height = h + 'px';
-      } catch {}
-    };
-    iframe.onload = update;
-    // Write content
+  const onIframeLoad = () => {
     try {
-      iframe.contentDocument?.open();
-      iframe.contentDocument?.write(code);
-      iframe.contentDocument?.close();
-      update();
+      const h = iframeRef.current?.contentDocument?.body?.scrollHeight;
+      if (h && h > 0) setHeight(Math.min(h + 32, 600));
     } catch {}
-  }, [code, showPreview]);
+  };
 
   return (
     <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
       {/* Header */}
       <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
-        <span>html</span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowPreview(p => !p)}
-            className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors"
-          >
-            {showPreview ? '{ } code' : '▶ preview'}
-          </button>
-        </div>
+        <span>html · live preview</span>
+        <button
+          onClick={() => setShowPreview(p => !p)}
+          className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors"
+        >
+          {showPreview ? '{ } code' : '▶ preview'}
+        </button>
       </div>
 
-      {/* Preview */}
+      {/* Preview — use srcdoc which works with sandbox */}
       {showPreview ? (
         <iframe
           ref={iframeRef}
+          srcDoc={code}
           sandbox="allow-scripts allow-forms"
+          onLoad={onIframeLoad}
           className="w-full border-0 bg-white"
-          style={{ minHeight: '100px', height: '200px' }}
+          style={{ height: `${height}px` }}
           title="html-preview"
         />
       ) : (
