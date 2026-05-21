@@ -4,8 +4,8 @@
     "description": "Natural language MongoDB querying — schema discovery, NL-to-aggregation-pipeline, and direct pipeline execution against your entity and trading partner collections",
     "enabled": true,
     "transport": "stdio",
-    "command": "node",
-    "args": ["../../mcp-servers/mongodb-query/dist/index.js"],
+    "command": "npx",
+    "args": ["tsx", "${MONGODB_QUERY_MCP_PATH}/src/index.ts"],
     "env": {
       "MONGODB_URI": "${MONGODB_URI}",
       "MONGODB_DB": "${MONGODB_QUERY_DB}",
