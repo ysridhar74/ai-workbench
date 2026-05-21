@@ -1,5 +1,25 @@
 [
   {
+    "name": "mongodb-query",
+    "description": "Natural language MongoDB querying — schema discovery, NL-to-aggregation-pipeline, and direct pipeline execution against your entity and trading partner collections",
+    "enabled": true,
+    "transport": "stdio",
+    "command": "node",
+    "args": ["../../mcp-servers/mongodb-query/dist/index.js"],
+    "env": {
+      "MONGODB_URI": "${MONGODB_URI}",
+      "MONGODB_DB": "${MONGODB_QUERY_DB}",
+      "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+      "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+      "LLM_MODEL": "${LLM_MODEL}",
+      "LLM_BASE_URL": "${LLM_BASE_URL}",
+      "QUERY_TIMEOUT_MS": "30000",
+      "SAMPLE_SIZE": "200"
+    },
+    "tools": []
+  },
+
+  {
     "name": "filesystem",
     "description": "Read and write files on the local file system",
     "enabled": true,
