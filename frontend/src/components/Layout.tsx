@@ -17,7 +17,7 @@ export function Layout() {
   return (
     <div className="flex w-full h-full bg-background overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-56 flex-shrink-0 border-r bg-white flex flex-col">
+      <aside className="w-48 flex-shrink-0 border-r bg-white flex flex-col">
         {/* Logo */}
         <div className="px-5 py-4 border-b">
           <div className="flex items-center gap-2">
