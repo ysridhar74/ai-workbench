@@ -141,32 +141,38 @@ function MarkdownContent({ content }: { content: string }) {
           <td className="px-3 py-2 text-sm border border-border">{children}</td>
         ),
         // Code blocks with syntax highlighting
+        // ReactMarkdown renders fenced blocks as <pre><code className="language-xxx">
+        // We suppress <pre> and handle everything in <code>.
+        // isBlock = has a language class OR the raw string contains newlines (unlabelled fences)
         code: ({ children, className }) => {
+          const raw = Array.isArray(children)
+            ? children.map((c) => (typeof c === 'string' ? c : '')).join('')
+            : String(children ?? '');
           const match = /language-(\w+)/.exec(className || '');
           const language = match ? match[1] : '';
-          const isBlock = !!match || (typeof children === 'string' && (children as string).includes('\n'));
+          const isBlock = !!match || raw.includes('\n');
 
           if (isBlock) {
             return (
               <div className="my-3 rounded-lg overflow-hidden border border-border">
-                {language && (
-                  <div className="bg-muted px-3 py-1.5 text-[11px] font-mono text-muted-foreground border-b border-border flex items-center justify-between">
-                    <span>{language}</span>
-                  </div>
-                )}
+                <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
+                  <span>{language || 'code'}</span>
+                </div>
                 <SyntaxHighlighter
                   language={language || 'text'}
                   style={oneLight}
                   customStyle={{
                     margin: 0,
-                    padding: '12px',
-                    fontSize: '12px',
-                    lineHeight: '1.5',
+                    padding: '14px',
+                    fontSize: '12.5px',
+                    lineHeight: '1.6',
                     background: '#f8f9fa',
+                    borderRadius: 0,
                   }}
                   wrapLongLines={false}
+                  PreTag="div"
                 >
-                  {String(children).replace(/\n$/, '')}
+                  {raw.replace(/\n$/, '')}
                 </SyntaxHighlighter>
               </div>
             );
@@ -178,6 +184,7 @@ function MarkdownContent({ content }: { content: string }) {
             </code>
           );
         },
+        // Suppress the wrapping <pre> — our code component handles the block styling
         pre: ({ children }) => <>{children}</>,
       }}
     >
