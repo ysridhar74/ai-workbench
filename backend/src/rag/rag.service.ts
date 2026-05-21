@@ -163,37 +163,30 @@ export class RagService {
         'product documentation, or any ingested knowledge. ' +
         'Input: a JSON string {"query": "your search query", "namespace": "default"} ' +
         'or just a plain search query string.',
-      func: async (input: string): Promise<string> => {
+      func: async (rawInput: string): Promise<string> => {
         try {
-          let query: string;
-          let namespace = defaultNamespace;
-
-          // LangGraph sometimes wraps the tool input as {"input": "<actual payload>"}
-          // Handle all possible shapes: plain string, {query}, {input: string}, {input: {query}}
-          try {
-            const parsed = JSON.parse(input);
-            // Unwrap outer {input: ...} wrapper if present
-            const inner = parsed.input !== undefined ? parsed.input : parsed;
-            if (typeof inner === 'string') {
-              // inner is still a JSON string — try parsing again
-              try {
-                const innerParsed = JSON.parse(inner);
-                query = innerParsed.query ?? inner;
-                if (innerParsed.namespace) namespace = innerParsed.namespace;
-              } catch {
-                query = inner;
-              }
-            } else {
-              query = inner.query ?? JSON.stringify(inner);
-              if (inner.namespace) namespace = inner.namespace;
+          // Recursively unwrap until we have a plain {query, namespace} object or string.
+          // LangGraph wraps DynamicTool inputs as {"input": "<json>"} one or more levels deep.
+          const unwrap = (v: unknown): { query: string; namespace: string } => {
+            if (typeof v === 'string') {
+              try { return unwrap(JSON.parse(v)); } catch { return { query: v, namespace: defaultNamespace }; }
             }
-          } catch {
-            // Not JSON at all — use as plain string
-            query = input;
-          }
+            if (v && typeof v === 'object') {
+              const o = v as Record<string, unknown>;
+              // Unwrap LangGraph wrapper
+              if (o.input !== undefined) return unwrap(o.input);
+              // Standard shape
+              const query = typeof o.query === 'string' ? o.query : JSON.stringify(o);
+              const namespace = typeof o.namespace === 'string' ? o.namespace : defaultNamespace;
+              return { query, namespace };
+            }
+            return { query: String(v ?? ''), namespace: defaultNamespace };
+          };
 
-          query = (query ?? '').trim();
-          if (!query) return 'Knowledge base search failed: empty query provided.';
+          const { query, namespace } = unwrap(rawInput);
+          this.logger.debug(`RAG search — query: "${query}", namespace: "${namespace}"`);
+
+          if (!query.trim()) return 'Knowledge base search failed: empty query provided.';
 
           const results = await this.retrieveWithScores(query, { namespace, topK: 4 });
 
