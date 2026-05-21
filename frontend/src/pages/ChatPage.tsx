@@ -150,21 +150,33 @@ function splitCodeBlocks(content: string): Segment[] {
 
 function HtmlBlock({ code }: { code: string }) {
   const [showPreview, setShowPreview] = useState(true);
-  const [height, setHeight] = useState(300);
+  const [height, setHeight] = useState(200);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const onIframeLoad = () => {
-    try {
-      const h = iframeRef.current?.contentDocument?.body?.scrollHeight;
-      if (h && h > 0) setHeight(Math.min(h + 32, 600));
-    } catch {}
+    // Poll until content fully renders (charts/JS may paint after load)
+    let attempts = 0;
+    const measure = () => {
+      try {
+        const doc = iframeRef.current?.contentDocument;
+        const h = doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight;
+        if (h && h > 50) {
+          setHeight(h + 16);
+        }
+        if (attempts++ < 8) setTimeout(measure, 200);
+      } catch {}
+    };
+    measure();
   };
 
   return (
     <div className="my-3 rounded-lg border border-border overflow-hidden" style={{ maxWidth: '100%' }}>
       {/* Header */}
       <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center justify-between">
-        <span>html · live preview</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
+          html · live preview
+        </span>
         <button
           onClick={() => setShowPreview(p => !p)}
           className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors"
@@ -173,15 +185,15 @@ function HtmlBlock({ code }: { code: string }) {
         </button>
       </div>
 
-      {/* Preview — use srcdoc which works with sandbox */}
+      {/* Preview — srcdoc works correctly with sandbox */}
       {showPreview ? (
         <iframe
           ref={iframeRef}
           srcDoc={code}
           sandbox="allow-scripts allow-forms"
           onLoad={onIframeLoad}
-          className="w-full border-0 bg-white"
-          style={{ height: `${height}px` }}
+          className="w-full border-0 bg-white block"
+          style={{ height: `${height}px`, transition: 'height 0.2s ease' }}
           title="html-preview"
         />
       ) : (
@@ -291,6 +303,63 @@ function MarkdownContent({ content }: { content: string }) {
   );
 }
 
+// ── Streaming indicator ───────────────────────────────────────────────────────
+
+const THINKING_LABELS = [
+  'Thinking…',
+  'Working on it…',
+  'Analysing…',
+  'Generating…',
+  'Crafting response…',
+];
+
+function StreamingIndicator({ content }: { content: string }) {
+  const [labelIdx] = useState(() => Math.floor(Math.random() * THINKING_LABELS.length));
+  const hasContent = content.length > 0;
+
+  // Detect what kind of content is being generated
+  const isGeneratingHtml = content.includes('```html') || content.includes('<!DOCTYPE') || content.includes('<html');
+  const isGeneratingCode = !isGeneratingHtml && content.includes('```');
+  const label = isGeneratingHtml
+    ? 'Building UI…'
+    : isGeneratingCode
+    ? 'Writing code…'
+    : THINKING_LABELS[labelIdx];
+
+  // Count words so far for the progress hint
+  const wordCount = hasContent ? content.trim().split(/\s+/).length : 0;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Animated label */}
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1">
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+        </div>
+        <span className="text-xs text-muted-foreground font-medium animate-pulse">
+          {label}
+        </span>
+        {hasContent && (
+          <span className="text-[10px] text-muted-foreground/60 ml-1">
+            {wordCount} words
+          </span>
+        )}
+      </div>
+
+      {/* Live content preview — plain text, no parsing */}
+      {hasContent && (
+        <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words opacity-70 max-h-48 overflow-hidden relative">
+          {content.slice(-600)}
+          {/* Fade out bottom */}
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── User message — detects code and renders accordingly ──────────────────────
 
 function UserContent({ content }: { content: string }) {
@@ -349,16 +418,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       {/* Content — takes remaining width, never grows wider than parent */}
       <div className="min-w-0 flex-1 space-y-2" style={{ width: 0 }}>
         <div className="text-sm text-foreground">
-          {msg.isStreaming && !msg.content ? (
-            <span className="flex gap-1 items-center h-5 mt-1">
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-            </span>
-          ) : msg.isStreaming ? (
-            <pre className="text-sm font-sans leading-relaxed whitespace-pre-wrap break-words">
-              {msg.content}
-            </pre>
+          {msg.isStreaming ? (
+            <StreamingIndicator content={msg.content} />
           ) : (
             <div className="text-left">
               <MarkdownContent content={msg.content} />
