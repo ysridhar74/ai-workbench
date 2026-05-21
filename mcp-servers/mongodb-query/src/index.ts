@@ -28,7 +28,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { connect, disconnect, getSchemas, getSchemaForCollection, getCacheInfo, executePipeline, findDocuments } from './db.js';
+import { connect, disconnect, getDb, getSchemas, getSchemaForCollection, getCacheInfo, executePipeline, findDocuments } from './db.js';
 import { formatSchemaForPrompt, formatSchemasForPrompt } from './schema-discovery.js';
 import { PipelineGenerator } from './pipeline-generator.js';
 import { validatePipeline, serializePipeline, MAX_RESULT_LIMIT } from './pipeline-validator.js';
@@ -43,12 +43,21 @@ const LLM_BASE_URL   = process.env.LLM_BASE_URL;
 const QUERY_TIMEOUT  = parseInt(process.env.QUERY_TIMEOUT_MS ?? '30000', 10);
 const SAMPLE_SIZE    = parseInt(process.env.SAMPLE_SIZE ?? '200', 10);
 
-if (!MONGODB_URI || !MONGODB_DB) {
-  console.error('[mongodb-query-mcp] FATAL: MONGODB_URI and MONGODB_DB are required');
-  process.exit(1);
-}
-if (!OPENAI_API_KEY) {
-  console.error('[mongodb-query-mcp] FATAL: OPENAI_API_KEY (or ANTHROPIC_API_KEY) is required for pipeline generation');
+// Print env state for diagnostics (mask secrets)
+console.error('[mongodb-query-mcp] Config:');
+console.error(`  MONGODB_URI    = ${MONGODB_URI ? MONGODB_URI.replace(/:\/\/[^@]+@/, '://<credentials>@') : '❌ NOT SET'}`);
+console.error(`  MONGODB_DB     = ${MONGODB_DB || '❌ NOT SET'}`);
+console.error(`  OPENAI_API_KEY = ${OPENAI_API_KEY ? '✓ set' : '❌ NOT SET'}`);
+console.error(`  LLM_MODEL      = ${LLM_MODEL}`);
+console.error(`  LLM_BASE_URL   = ${LLM_BASE_URL ?? '(direct provider)'}`);
+
+const missing: string[] = [];
+if (!MONGODB_URI) missing.push('MONGODB_URI');
+if (!MONGODB_DB)  missing.push('MONGODB_DB (or MONGODB_DATABASE)');
+if (!OPENAI_API_KEY) missing.push('OPENAI_API_KEY (or ANTHROPIC_API_KEY)');
+
+if (missing.length > 0) {
+  console.error(`[mongodb-query-mcp] FATAL: Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
 
@@ -107,13 +116,9 @@ server.tool(
   {},
   async () => {
     try {
-      // Get collections from DB directly so we don't need pre-cached schemas
-      const { MongoClient } = await import('mongodb');
-      const client = new MongoClient(MONGODB_URI);
-      await client.connect();
-      const database = client.db(MONGODB_DB);
+      // Use the shared connection established at startup
+      const database = getDb();
       const allCollections = await database.listCollections().toArray();
-
       const cacheInfo = getCacheInfo();
       const results = [];
 
@@ -133,14 +138,13 @@ server.tool(
         });
       }
 
-      await client.close();
-
       const summary = [
         `## Available Collections (${results.length})`,
+        `Database: ${MONGODB_DB}`,
         `Schema cache last refreshed: ${cacheInfo.lastDiscoveredAt ?? 'never — run discover_schema to analyse collections'}`,
         '',
         ...results.map(r =>
-          `- **${r.collection}** — ${r.documentCount?.toLocaleString() ?? '?'} documents${r.schemaDiscovered ? ' ✓ schema known' : ' (run discover_schema to analyse)'}`
+          `- **${r.collection}** — ${r.documentCount?.toLocaleString() ?? '?'} documents${r.schemaDiscovered ? ' ✓ schema known' : ''}`
         ),
       ].join('\n');
 
