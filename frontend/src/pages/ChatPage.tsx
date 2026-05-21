@@ -815,28 +815,28 @@ function FormFieldValue({ value, depth = 0 }: { value: JsonValue; depth?: number
       ))}
     </div>
   );
-  // Nested objects → recurse with FormView
-  if (isPlainObject(value) && depth < 3) return (
-    <div className="mt-2">
+    // Nested plain objects → go directly through FormView so they get grid+card treatment
+  if (isPlainObject(value) && depth < 4) return (
+    <div className="mt-1">
       <FormView data={value} depth={depth + 1} />
     </div>
   );
   return <span className="text-slate-500 text-xs font-mono">{JSON.stringify(value)}</span>;
 }
 
-// One labelled scalar field — compact, used inside the grid
+// One labelled scalar field — compact, sits in the grid
 function ScalarField({ label, value }: { label: string; value: JsonValue }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0">
       <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</span>
-      <div className="text-sm text-slate-800 truncate">
+      <div className="text-sm text-slate-800 min-w-0">
         <FormFieldValue value={value} />
       </div>
     </div>
   );
 }
 
-// Section card wrapping a nested object or array
+// Collapsible section card — wraps a nested object or array-of-objects
 const SECTION_ACCENTS = [
   'border-l-blue-400',
   'border-l-violet-400',
@@ -849,9 +849,27 @@ const SECTION_ACCENTS = [
 function SectionCard({ label, value, depth, index }: { label: string; value: JsonValue; depth: number; index: number }) {
   const accent = SECTION_ACCENTS[index % SECTION_ACCENTS.length];
   const [collapsed, setCollapsed] = useState(false);
+
+  // Decide what to render in the card body
+  const renderBody = () => {
+    // Plain object → full grid+card FormView recursion
+    if (isPlainObject(value)) {
+      return <FormView data={value as JsonObj} depth={depth} />;
+    }
+    // Array of objects → compact table
+    if (isArrayOfObjects(value)) {
+      return (
+        <div className="rounded border border-slate-200 overflow-hidden">
+          <TableView data={value} compact />
+        </div>
+      );
+    }
+    // Anything else (scalar arrays, etc.)
+    return <FormFieldValue value={value} depth={depth} />;
+  };
+
   return (
     <div className={`rounded-lg border border-slate-200 border-l-4 ${accent} bg-white shadow-sm overflow-hidden`}>
-      {/* Card header */}
       <button
         onClick={() => setCollapsed(c => !c)}
         className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
@@ -859,35 +877,44 @@ function SectionCard({ label, value, depth, index }: { label: string; value: Jso
         <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">{label}</span>
         <span className="text-slate-400 text-xs">{collapsed ? '▸' : '▾'}</span>
       </button>
-      {/* Card body */}
       {!collapsed && (
         <div className="px-4 py-3">
-          <FormFieldValue value={value} depth={depth} />
+          {renderBody()}
         </div>
       )}
     </div>
   );
 }
 
+// Classifies whether a value is "scalar" (should go in the flat grid) or
+// "complex" (should get its own collapsible SectionCard)
+function isScalarEntry(v: JsonValue): boolean {
+  if (v === null) return true;
+  if (typeof v !== 'object') return true;
+  // Short scalar arrays (tags) → scalar
+  if (Array.isArray(v) && v.every(x => x === null || typeof x !== 'object') && v.length <= 8) return true;
+  return false;
+}
+
 function FormView({ data, depth = 0 }: { data: JsonObj; depth?: number }) {
   const entries = Object.entries(data);
-
-  // Partition into scalar fields and complex (object/array) sections
-  const scalars = entries.filter(([, v]) => v === null || typeof v !== 'object' || (Array.isArray(v) && v.every(x => x === null || typeof x !== 'object')));
-  const sections = entries.filter(([, v]) => typeof v === 'object' && v !== null && !(Array.isArray(v) && v.every(x => x === null || typeof x !== 'object')));
-
   const toLabel = (key: string) => key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
 
-  // Decide grid columns: 2 for depth>0, otherwise up to 4 depending on count
-  const gridCols = depth > 0
-    ? 'grid-cols-2'
-    : scalars.length <= 2 ? 'grid-cols-2' : scalars.length <= 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3';
+  const scalars  = entries.filter(([, v]) => isScalarEntry(v));
+  const sections = entries.filter(([, v]) => !isScalarEntry(v));
+
+  // Responsive grid: more columns when there are many short scalar fields
+  const cols =
+    scalars.length === 1 ? 'grid-cols-1' :
+    scalars.length === 2 ? 'grid-cols-2' :
+    scalars.length <= 4  ? 'grid-cols-2 sm:grid-cols-4' :
+                           'grid-cols-2 sm:grid-cols-3';
 
   return (
     <div className="space-y-3">
-      {/* Scalar grid */}
+      {/* Scalar fields in a responsive grid */}
       {scalars.length > 0 && (
-        <div className={`grid ${gridCols} gap-x-6 gap-y-3 ${depth === 0 ? 'bg-white rounded-lg border border-slate-100 px-4 py-3' : ''}`}>
+        <div className={`grid ${cols} gap-x-6 gap-y-3`}>
           {scalars.map(([key, val]) => (
             <ScalarField key={key} label={toLabel(key)} value={val} />
           ))}
