@@ -196,11 +196,13 @@ function MarkdownContent({ content }: { content: string }) {
               td: ({ children }) => (
                 <td className="px-3 py-2 text-sm border border-border">{children}</td>
               ),
-              code: ({ children, className }: any) => {
+              code: ({ children, className, node }: any) => {
                 const lang = /language-(\w+)/.exec(className || '')?.[1] || '';
-                // Fallback: if regex missed a fenced block, render it properly here
                 if (className?.startsWith('language-')) {
-                  return <CodeBlock lang={lang} code={String(children ?? '').replace(/\n$/, '')} />;
+                  // node.children[0].value is the raw unprocessed text from the AST
+                  const raw = node?.children?.[0]?.value ?? '';
+                  console.log('FALLBACK CODE raw:', JSON.stringify(raw.slice(0, 100)), 'children type:', typeof children, Array.isArray(children));
+                  return <CodeBlock lang={lang} code={raw.replace(/\n$/, '')} />;
                 }
                 return (
                   <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
