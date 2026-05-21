@@ -138,7 +138,7 @@ export function RunsPage() {
     queryFn: () => runsApi.stats(),
   });
 
-  const { data: runsData, isLoading } = useQuery({
+  const { data: runsData, isLoading, error } = useQuery({
     queryKey: ['runs', skillFilter, page],
     queryFn: () => runsApi.list({ skill: skillFilter || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
   });
@@ -146,6 +146,15 @@ export function RunsPage() {
   const runs: AgentRun[] = runsData?.runs ?? [];
   const total: number = runsData?.total ?? 0;
   const stats = statsData;
+
+  if (error) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center gap-2 text-sm text-destructive">
+        <p className="font-semibold">Failed to load runs</p>
+        <p className="text-xs text-muted-foreground font-mono">{(error as Error).message}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
