@@ -2,8 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -98,6 +100,122 @@ function LiveToolBadge({ tool }: { tool: string | null }) {
   );
 }
 
+// ── Markdown renderer ────────────────────────────────────────────────────────
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
+        h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2 text-foreground">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-base font-bold mt-4 mb-2 text-foreground">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1.5 text-foreground">{children}</h3>,
+        h4: ({ children }) => <h4 className="text-sm font-semibold mt-2 mb-1 text-foreground">{children}</h4>,
+        ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
+        li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+        em: ({ children }) => <em className="italic">{children}</em>,
+        hr: () => <hr className="my-4 border-border" />,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-4 border-primary/30 pl-4 py-1 my-3 bg-muted/40 rounded-r text-muted-foreground italic">
+            {children}
+          </blockquote>
+        ),
+        // Tables (requires remark-gfm)
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-3">
+            <table className="w-full border-collapse text-sm">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
+        tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
+        tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
+        th: ({ children }) => (
+          <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide border border-border">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="px-3 py-2 text-sm border border-border">{children}</td>
+        ),
+        // Code blocks with syntax highlighting
+        code: ({ children, className }) => {
+          const match = /language-(\w+)/.exec(className || '');
+          const language = match ? match[1] : '';
+          const isBlock = !!match || (typeof children === 'string' && (children as string).includes('\n'));
+
+          if (isBlock) {
+            return (
+              <div className="my-3 rounded-lg overflow-hidden border border-border">
+                {language && (
+                  <div className="bg-muted px-3 py-1.5 text-[11px] font-mono text-muted-foreground border-b border-border flex items-center justify-between">
+                    <span>{language}</span>
+                  </div>
+                )}
+                <SyntaxHighlighter
+                  language={language || 'text'}
+                  style={oneLight}
+                  customStyle={{
+                    margin: 0,
+                    padding: '12px',
+                    fontSize: '12px',
+                    lineHeight: '1.5',
+                    background: '#f8f9fa',
+                  }}
+                  wrapLongLines={false}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              </div>
+            );
+          }
+
+          return (
+            <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+              {children}
+            </code>
+          );
+        },
+        pre: ({ children }) => <>{children}</>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+}
+
+// ── User message — detects code and renders accordingly ──────────────────────
+
+function UserContent({ content }: { content: string }) {
+  // Detect if the content is primarily code (contains newlines + code-like patterns)
+  const lines = content.split('\n');
+  const looksLikeCode = lines.length > 3 && (
+    content.includes('def ') ||
+    content.includes('function ') ||
+    content.includes('import ') ||
+    content.includes('const ') ||
+    content.includes('class ') ||
+    content.includes('    ') || // indented code
+    content.includes('\t') ||
+    /[{};()=>]/.test(content)
+  );
+
+  if (looksLikeCode) {
+    return (
+      <div className="text-left">
+        <p className="text-xs text-primary-foreground/70 mb-2 font-medium">Code</p>
+        <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-x-auto">
+          {content}
+        </pre>
+      </div>
+    );
+  }
+
+  return <span className="leading-relaxed">{content}</span>;
+}
+
 // ── Message bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {
@@ -106,16 +224,16 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   if (isUser) {
     return (
       <div className="flex justify-end px-4 py-2 animate-fade-in">
-        <div className="max-w-[70%]">
-          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed">
-            {msg.content}
+        <div className="max-w-[75%]">
+          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3 text-sm">
+            <UserContent content={msg.content} />
           </div>
         </div>
       </div>
     );
   }
 
-  // Assistant message — full width left-aligned like Claude/ChatGPT
+  // Assistant message — full width left-aligned
   return (
     <div className="flex gap-3 px-4 py-2 animate-fade-in">
       {/* Avatar */}
@@ -125,7 +243,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
       {/* Content fills remaining width */}
       <div className="flex-1 min-w-0 space-y-2">
-        <div className="text-sm leading-relaxed text-foreground">
+        <div className="text-sm text-foreground">
           {msg.isStreaming && !msg.content ? (
             <span className="flex gap-1 items-center h-5 mt-1">
               <span className="typing-dot" />
@@ -133,28 +251,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               <span className="typing-dot" />
             </span>
           ) : (
-            <div className="text-sm leading-relaxed text-left">
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                  h1: ({ children }) => <h1 className="text-base font-semibold mt-3 mb-1">{children}</h1>,
-                  h2: ({ children }) => <h2 className="text-sm font-semibold mt-3 mb-1">{children}</h2>,
-                  h3: ({ children }) => <h3 className="text-sm font-medium mt-2 mb-1">{children}</h3>,
-                  ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
-                  ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
-                  li: ({ children }) => <li className="text-sm">{children}</li>,
-                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                  code: ({ children, className }) => {
-                    const isBlock = className?.includes('language-');
-                    return isBlock
-                      ? <pre className="bg-muted rounded p-3 overflow-x-auto text-xs my-2 text-left"><code>{children}</code></pre>
-                      : <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
-                  },
-                  blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-3 text-muted-foreground italic my-2">{children}</blockquote>,
-                }}
-              >
-                {msg.content}
-              </ReactMarkdown>
+            <div className="text-left">
+              <MarkdownContent content={msg.content} />
             </div>
           )}
         </div>
@@ -174,6 +272,72 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Smart textarea input ──────────────────────────────────────────────────────
+
+function ChatInput({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  disabled: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 240) + 'px';
+  }, [value]);
+
+  // Detect if pasted/typed content looks like code
+  const looksLikeCode = value.split('\n').length > 3 && (
+    value.includes('def ') || value.includes('function ') ||
+    value.includes('import ') || value.includes('const ') ||
+    value.includes('class ') || value.includes('    ') || value.includes('\t') ||
+    /[{};=>]/.test(value)
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      onSubmit();
+    }
+  };
+
+  return (
+    <div className={cn(
+      'relative flex-1 rounded-xl border bg-white transition-colors',
+      looksLikeCode ? 'border-violet-200 bg-gray-50' : 'border-input',
+    )}>
+      {looksLikeCode && (
+        <div className="absolute top-2 right-3 text-[10px] text-violet-500 font-mono font-medium pointer-events-none">
+          code detected
+        </div>
+      )}
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Message the agent… (Enter to send, Shift+Enter for newline)"
+        disabled={disabled}
+        rows={1}
+        className={cn(
+          'w-full resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground',
+          'min-h-[44px] max-h-[240px]',
+          looksLikeCode ? 'font-mono text-xs' : 'font-sans',
+        )}
+      />
     </div>
   );
 }
@@ -201,7 +365,6 @@ export function ChatPage() {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: skills = [] } = useQuery<Skill[]>({
     queryKey: ['skills'],
@@ -283,17 +446,13 @@ export function ChatPage() {
       },
     );
     stopRef.current = stop;
-  }, [input, isStreaming, messages, selectedSkill, useRag, useTools, addMessage, updateLastAssistant, clearMessages]);
+  }, [input, isStreaming, messages, selectedSkill, useRag, useTools, addMessage, updateLastAssistant]);
 
   const handleStop = () => {
     stopRef.current?.();
     setIsStreaming(false);
     setActiveTool(null);
     updateLastAssistant(m => ({ ...m, isStreaming: false }));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
   return (
@@ -360,7 +519,7 @@ export function ChatPage() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 py-6">
+      <ScrollArea className="flex-1 py-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full py-24 text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
@@ -378,7 +537,7 @@ export function ChatPage() {
               ].map(suggestion => (
                 <button
                   key={suggestion}
-                  onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
+                  onClick={() => setInput(suggestion)}
                   className="text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-muted transition-colors"
                 >
                   {suggestion}
@@ -388,7 +547,7 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="space-y-1">
+        <div className="space-y-1 pb-2">
           {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
 
           {/* Live tool indicator */}
@@ -409,30 +568,25 @@ export function ChatPage() {
       {/* Input bar */}
       <div className="flex-shrink-0 bg-white border-t px-4 py-3">
         <div className="flex gap-2 items-end">
-          <div className="flex-1 relative">
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message the agent… (Enter to send)"
-              className="pr-4 py-3 h-auto text-sm resize-none"
-              disabled={isStreaming}
-            />
-          </div>
+          <ChatInput
+            value={input}
+            onChange={setInput}
+            onSubmit={handleSubmit}
+            disabled={isStreaming}
+          />
 
           {isStreaming ? (
-            <Button size="icon" variant="destructive" onClick={handleStop} className="flex-shrink-0">
+            <Button size="icon" variant="destructive" onClick={handleStop} className="flex-shrink-0 mb-0.5">
               <Square className="w-4 h-4" />
             </Button>
           ) : (
-            <Button size="icon" onClick={handleSubmit} disabled={!input.trim()} className="flex-shrink-0">
+            <Button size="icon" onClick={handleSubmit} disabled={!input.trim()} className="flex-shrink-0 mb-0.5">
               <Send className="w-4 h-4" />
             </Button>
           )}
         </div>
         <p className="text-[11px] text-muted-foreground mt-1.5">
-          Skill: <span className="font-medium">{selectedSkill}</span> · userId: <span className="font-mono">{USER_ID}</span>
+          Skill: <span className="font-medium">{selectedSkill}</span> · Shift+Enter for newline
         </p>
       </div>
     </div>
