@@ -776,8 +776,9 @@ function detectShape(parsed: JsonValue): 'form' | 'table' | 'cards' | 'bar-chart
 
 // ── FormView ─────────────────────────────────────────────────────────────────
 
+// Renders a single scalar value with smart formatting
 function FormFieldValue({ value, depth = 0 }: { value: JsonValue; depth?: number }) {
-  if (value === null) return <span className="text-slate-400 italic">null</span>;
+  if (value === null) return <span className="text-slate-400 italic text-sm">null</span>;
   if (typeof value === 'boolean') return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${value ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${value ? 'bg-emerald-500' : 'bg-red-400'}`} />
@@ -788,51 +789,115 @@ function FormFieldValue({ value, depth = 0 }: { value: JsonValue; depth?: number
     <span className="font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-sm">{value.toLocaleString()}</span>
   );
   if (typeof value === 'string') {
-    if (/^https?:\/\//.test(value)) return <a href={value} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 break-all text-sm">{value}</a>;
-    if (/^\d{4}-\d{2}-\d{2}/.test(value)) return <span className="text-slate-700 text-sm font-medium">{new Date(value).toLocaleString()}</span>;
-    if (value.length > 120) return <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded p-2 border">{value}</p>;
+    if (/^https?:\/\//.test(value))
+      return <a href={value} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 break-all text-sm">{value}</a>;
+    if (/^\d{4}-\d{2}-\d{2}/.test(value))
+      return <span className="text-slate-700 text-sm font-medium">{new Date(value).toLocaleString()}</span>;
+    if (value.length > 120)
+      return <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded p-2 border mt-1">{value}</p>;
     return <span className="text-slate-800 text-sm">{value}</span>;
   }
-  if (isArrayOfObjects(value) && depth < 2) {
+  // Arrays of objects → compact table
+  if (isArrayOfObjects(value) && depth < 3) {
     return (
       <div className="mt-1 rounded border border-slate-200 overflow-hidden">
         <TableView data={value} compact />
       </div>
     );
   }
+  // Arrays of scalars → pill tags
   if (Array.isArray(value)) return (
-    <div className="flex flex-wrap gap-1 mt-0.5">
+    <div className="flex flex-wrap gap-1 mt-1">
       {(value as JsonValue[]).map((item, i) => (
-        <span key={i} className="text-xs bg-slate-100 border border-slate-200 rounded px-2 py-0.5 text-slate-700">
+        <span key={i} className="text-xs bg-slate-100 border border-slate-200 rounded-full px-2.5 py-0.5 text-slate-700">
           <FormFieldValue value={item} depth={depth + 1} />
         </span>
       ))}
     </div>
   );
-  if (isPlainObject(value) && depth < 2) return (
-    <div className="mt-1 pl-3 border-l-2 border-primary/20 space-y-2">
+  // Nested objects → recurse with FormView
+  if (isPlainObject(value) && depth < 3) return (
+    <div className="mt-2">
       <FormView data={value} depth={depth + 1} />
     </div>
   );
   return <span className="text-slate-500 text-xs font-mono">{JSON.stringify(value)}</span>;
 }
 
+// One labelled scalar field — compact, used inside the grid
+function ScalarField({ label, value }: { label: string; value: JsonValue }) {
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</span>
+      <div className="text-sm text-slate-800 truncate">
+        <FormFieldValue value={value} />
+      </div>
+    </div>
+  );
+}
+
+// Section card wrapping a nested object or array
+const SECTION_ACCENTS = [
+  'border-l-blue-400',
+  'border-l-violet-400',
+  'border-l-emerald-400',
+  'border-l-amber-400',
+  'border-l-rose-400',
+  'border-l-cyan-400',
+];
+
+function SectionCard({ label, value, depth, index }: { label: string; value: JsonValue; depth: number; index: number }) {
+  const accent = SECTION_ACCENTS[index % SECTION_ACCENTS.length];
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div className={`rounded-lg border border-slate-200 border-l-4 ${accent} bg-white shadow-sm overflow-hidden`}>
+      {/* Card header */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+      >
+        <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">{label}</span>
+        <span className="text-slate-400 text-xs">{collapsed ? '▸' : '▾'}</span>
+      </button>
+      {/* Card body */}
+      {!collapsed && (
+        <div className="px-4 py-3">
+          <FormFieldValue value={value} depth={depth} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FormView({ data, depth = 0 }: { data: JsonObj; depth?: number }) {
   const entries = Object.entries(data);
+
+  // Partition into scalar fields and complex (object/array) sections
+  const scalars = entries.filter(([, v]) => v === null || typeof v !== 'object' || (Array.isArray(v) && v.every(x => x === null || typeof x !== 'object')));
+  const sections = entries.filter(([, v]) => typeof v === 'object' && v !== null && !(Array.isArray(v) && v.every(x => x === null || typeof x !== 'object')));
+
+  const toLabel = (key: string) => key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+
+  // Decide grid columns: 2 for depth>0, otherwise up to 4 depending on count
+  const gridCols = depth > 0
+    ? 'grid-cols-2'
+    : scalars.length <= 2 ? 'grid-cols-2' : scalars.length <= 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3';
+
   return (
-    <div className={`space-y-${depth === 0 ? '4' : '2'}`}>
-      {entries.map(([key, val]) => {
-        const isComplex = typeof val === 'object' && val !== null;
-        const label = key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
-        return (
-          <div key={key} className={isComplex && depth === 0 ? 'border border-slate-100 rounded-lg p-3 bg-slate-50/60' : ''}>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
-              {label}
-            </label>
-            <FormFieldValue value={val} depth={depth} />
-          </div>
-        );
-      })}
+    <div className="space-y-3">
+      {/* Scalar grid */}
+      {scalars.length > 0 && (
+        <div className={`grid ${gridCols} gap-x-6 gap-y-3 ${depth === 0 ? 'bg-white rounded-lg border border-slate-100 px-4 py-3' : ''}`}>
+          {scalars.map(([key, val]) => (
+            <ScalarField key={key} label={toLabel(key)} value={val} />
+          ))}
+        </div>
+      )}
+
+      {/* Complex sections — each gets a collapsible card */}
+      {sections.map(([key, val], i) => (
+        <SectionCard key={key} label={toLabel(key)} value={val} depth={depth + 1} index={i} />
+      ))}
     </div>
   );
 }
