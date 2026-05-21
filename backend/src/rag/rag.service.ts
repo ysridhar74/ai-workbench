@@ -165,17 +165,35 @@ export class RagService {
         'or just a plain search query string.',
       func: async (input: string): Promise<string> => {
         try {
-          let query = input.trim();
+          let query: string;
           let namespace = defaultNamespace;
 
-          // Parse JSON input if provided
+          // LangGraph sometimes wraps the tool input as {"input": "<actual payload>"}
+          // Handle all possible shapes: plain string, {query}, {input: string}, {input: {query}}
           try {
             const parsed = JSON.parse(input);
-            if (parsed.query) query = parsed.query;
-            if (parsed.namespace) namespace = parsed.namespace;
+            // Unwrap outer {input: ...} wrapper if present
+            const inner = parsed.input !== undefined ? parsed.input : parsed;
+            if (typeof inner === 'string') {
+              // inner is still a JSON string — try parsing again
+              try {
+                const innerParsed = JSON.parse(inner);
+                query = innerParsed.query ?? inner;
+                if (innerParsed.namespace) namespace = innerParsed.namespace;
+              } catch {
+                query = inner;
+              }
+            } else {
+              query = inner.query ?? JSON.stringify(inner);
+              if (inner.namespace) namespace = inner.namespace;
+            }
           } catch {
-            // plain string — use as-is
+            // Not JSON at all — use as plain string
+            query = input;
           }
+
+          query = (query ?? '').trim();
+          if (!query) return 'Knowledge base search failed: empty query provided.';
 
           const results = await this.retrieveWithScores(query, { namespace, topK: 4 });
 
