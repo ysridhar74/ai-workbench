@@ -3,8 +3,21 @@ import { useQuery } from '@tanstack/react-query';
 import { Send, Square, ChevronDown, ChevronRight, Wrench, Database, Bot, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
+import python from 'react-syntax-highlighter/dist/esm/languages/hljs/python';
+import javascript from 'react-syntax-highlighter/dist/esm/languages/hljs/javascript';
+import typescript from 'react-syntax-highlighter/dist/esm/languages/hljs/typescript';
+import bash from 'react-syntax-highlighter/dist/esm/languages/hljs/bash';
+import json from 'react-syntax-highlighter/dist/esm/languages/hljs/json';
+import sql from 'react-syntax-highlighter/dist/esm/languages/hljs/sql';
+import { githubGist } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+
+SyntaxHighlighter.registerLanguage('python', python);
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('typescript', typescript);
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('sql', sql);
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -115,17 +128,16 @@ function splitCodeBlocks(content: string): Segment[] {
     }
     segments.push({ type: 'code', lang: match[1] || 'text', code: match[2] });
     last = match.index + match[0].length;
-    console.log('CODE BLOCK FOUND:', match[1], JSON.stringify(match[2].slice(0, 100)));
   }
   if (last < content.length) {
     segments.push({ type: 'markdown', text: content.slice(last) });
   }
-  console.log('TOTAL SEGMENTS:', segments.length, segments.map(s => s.type));
-  console.log('FULL CONTENT:', JSON.stringify(content.slice(0, 200)));
   return segments;
 }
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const supported = ['python','javascript','typescript','bash','json','sql'];
+  const language = supported.includes(lang) ? lang : 'text';
   return (
     <div className="my-3 rounded-lg border border-border" style={{ maxWidth: '100%' }}>
       <div className="bg-slate-800 px-3 py-1.5 text-[11px] font-mono text-slate-300 border-b border-slate-700 flex items-center">
@@ -133,8 +145,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       </div>
       <div style={{ overflowX: 'auto' }}>
         <SyntaxHighlighter
-          language={lang || 'text'}
-          style={oneLight}
+          language={language}
+          style={githubGist}
+          useInlineStyles={true}
           customStyle={{
             margin: 0,
             padding: '14px',
@@ -142,8 +155,8 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
             lineHeight: '1.6',
             background: '#f8f9fa',
             borderRadius: 0,
+            whiteSpace: 'pre',
           }}
-          wrapLongLines={false}
         >
           {code}
         </SyntaxHighlighter>
@@ -196,21 +209,11 @@ function MarkdownContent({ content }: { content: string }) {
               td: ({ children }) => (
                 <td className="px-3 py-2 text-sm border border-border">{children}</td>
               ),
-              code: ({ children, className, node }: any) => {
-                const lang = /language-(\w+)/.exec(className || '')?.[1] || '';
-                if (className?.startsWith('language-')) {
-                  // node.children[0].value is the raw unprocessed text from the AST
-                  const raw = node?.children?.[0]?.value ?? '';
-                  console.log('FALLBACK CODE raw:', JSON.stringify(raw.slice(0, 100)), 'children type:', typeof children, Array.isArray(children));
-                  return <CodeBlock lang={lang} code={raw.replace(/\n$/, '')} />;
-                }
-                return (
-                  <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
-                    {children}
-                  </code>
-                );
-              },
-              pre: ({ children }) => <>{children}</>,
+              code: ({ children }) => (
+                <code className="bg-muted rounded px-1.5 py-0.5 text-[12px] font-mono text-foreground">
+                  {children}
+                </code>
+              ),
             }}
           >
             {seg.text}
@@ -286,12 +289,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               <span className="typing-dot" />
             </span>
           ) : msg.isStreaming ? (
-            // While streaming: render raw text so partial fenced blocks don't break
             <pre className="text-sm font-sans leading-relaxed whitespace-pre-wrap break-words">
               {msg.content}
             </pre>
           ) : (
-            // Fully received: parse and render markdown with code blocks
             <div className="text-left">
               <MarkdownContent content={msg.content} />
             </div>
