@@ -106,8 +106,8 @@ type Segment = { type: 'markdown'; text: string } | { type: 'code'; lang: string
 
 function splitCodeBlocks(content: string): Segment[] {
   const segments: Segment[] = [];
-  // Match fenced code blocks: ```lang\n...code...\n```
-  const fence = /^```(\w*)\n([\s\S]*?)^```/gm;
+  // Match fenced code blocks — handles optional \r, spaces before closing fence
+  const fence = /```(\w*)\r?\n([\s\S]*?)```/g;
   let last = 0;
   let match;
   while ((match = fence.exec(content)) !== null) {
@@ -273,7 +273,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               <span className="typing-dot" />
               <span className="typing-dot" />
             </span>
+          ) : msg.isStreaming ? (
+            // While streaming: render raw text so partial fenced blocks don't break
+            <pre className="text-sm font-sans leading-relaxed whitespace-pre-wrap break-words">
+              {msg.content}
+            </pre>
           ) : (
+            // Fully received: parse and render markdown with code blocks
             <div className="text-left">
               <MarkdownContent content={msg.content} />
             </div>
