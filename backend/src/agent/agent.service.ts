@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, AzureChatOpenAI } from '@langchain/openai';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { traceable } from 'langsmith/traceable';
@@ -10,6 +10,12 @@ import { McpRegistryService } from '../mcp/mcp-registry.service';
 import { RagService } from '../rag/rag.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { MemoryService } from '../memory/memory.service';
+import { MongoQueryService } from '../mongo-query/mongo-query.service';
+import { UiRendererService } from './ui-renderer.service';
+import { ExcelProcessorService } from './excel-processor.service';
+import { ResultClassifierService } from './result-classifier.service';
+import { UsersService } from '../users/users.service';
+import { PERSONA_CONFIG } from '../users/persona.config';
 import { AgentRequestDto } from './agent.dto';
 
 export interface ToolStep {
@@ -37,8 +43,31 @@ export interface AgentResult {
   runId: string;
 }
 
-/** Build ChatOpenAI instance — shared between run() and runStream() */
-function buildLlm(config: ConfigService, model: string, streaming = false): ChatOpenAI {
+/**
+ * Build an LLM instance for the ReAct agent.
+ *
+ * Provider is selected by the LLM_PROVIDER env var:
+ *   azure   → AzureChatOpenAI  (requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT,
+ *                                AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT)
+ *   openai  → ChatOpenAI via OpenAI directly (OPENAI_API_KEY)
+ *   (default) → ChatOpenAI with optional LLM_BASE_URL for LiteLLM proxy / Ollama /
+ *               any other OpenAI-compatible endpoint
+ */
+function buildLlm(config: ConfigService, model: string, streaming = false): ChatOpenAI | AzureChatOpenAI {
+  const provider = (config.get<string>('LLM_PROVIDER') ?? '').toLowerCase();
+
+  if (provider === 'azure') {
+    return new AzureChatOpenAI({
+      azureOpenAIApiKey: config.getOrThrow<string>('AZURE_OPENAI_API_KEY'),
+      azureOpenAIApiInstanceName: config.getOrThrow<string>('AZURE_OPENAI_INSTANCE_NAME'),
+      azureOpenAIApiDeploymentName: config.getOrThrow<string>('AZURE_OPENAI_DEPLOYMENT'),
+      azureOpenAIApiVersion: config.get<string>('AZURE_OPENAI_API_VERSION') ?? '2024-02-01',
+      temperature: 0.7,
+      streaming,
+    } as any);
+  }
+
+  // Default: OpenAI-compatible (OpenAI direct, LiteLLM proxy, Ollama, Anthropic via proxy)
   return new ChatOpenAI({
     modelName: model,
     temperature: 0.7,
@@ -74,9 +103,35 @@ export class AgentService {
     private readonly ragService: RagService,
     private readonly observability: ObservabilityService,
     private readonly memory: MemoryService,
+    private readonly mongoQuery: MongoQueryService,
+    private readonly uiRenderer: UiRendererService,
+    private readonly excelProcessor: ExcelProcessorService,
+    private readonly resultClassifier: ResultClassifierService,
+    private readonly usersService: UsersService,
   ) {}
 
+  /**
+   * Resolve persona defaults for a request.
+   * If userId is present, look up their persona config and fill in any
+   * fields the caller didn't explicitly provide (skill, namespace, database).
+   */
+  private async resolvePersonaDefaults(dto: AgentRequestDto): Promise<AgentRequestDto> {
+    if (!dto.userId) return dto;
+
+    const user = await this.usersService.findById(dto.userId);
+    if (!user) return dto;
+
+    const pc = PERSONA_CONFIG[user.persona];
+    return {
+      ...dto,
+      skill: dto.skill ?? pc.skill,
+      namespace: dto.namespace ?? pc.ragNamespace,
+      database: dto.database ?? pc.defaultDatabase,
+    };
+  }
+
   async run(dto: AgentRequestDto): Promise<AgentResult> {
+    dto = await this.resolvePersonaDefaults(dto);
     const skillName = dto.skill ?? 'general-assistant';
     const skill = await this.skills.findByName(skillName);
     if (!skill) throw new NotFoundException(`Skill "${skillName}" not found`);
@@ -109,10 +164,12 @@ export class AgentService {
     // RAG is now a tool the agent calls when it decides it needs knowledge —
     // not pre-injected on every request (Option 3 pattern)
     const mcpTools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const mongoTools: any[] = dto.useTools !== false ? this.mongoQuery.getLangChainTools() : [];
+    const excelTools: any[] = dto.useTools !== false ? this.excelProcessor.createExcelTools() : [];
     const ragTool = dto.useRag !== false
       ? [this.ragService.asLangChainTool(dto.namespace ?? 'default')]
       : [];
-    const tools: any[] = [...ragTool, ...mcpTools];
+    const tools: any[] = [...ragTool, ...mcpTools, ...mongoTools, ...excelTools];
 
     // ── 3. Build agent (cached per model + tool fingerprint) ────────────────
     // Include rag/tools flags in the key so toggling them creates a fresh agent
@@ -212,6 +269,7 @@ export class AgentService {
 
   /** Streaming version — yields SSE events while the agent runs */
   async *runStream(dto: AgentRequestDto): AsyncGenerator<string> {
+    dto = await this.resolvePersonaDefaults(dto);
     const skillName = dto.skill ?? 'general-assistant';
     const skill = await this.skills.findByName(skillName);
     if (!skill) throw new NotFoundException(`Skill "${skillName}" not found`);
@@ -237,18 +295,30 @@ export class AgentService {
       h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content),
     );
 
+    // ── Build tool list ────────────────────────────────────────────────────────
     const mcpTools: any[] = dto.useTools !== false ? this.mcpRegistry.getLangChainTools() : [];
+    const mongoTools: any[] = dto.useTools !== false ? this.mongoQuery.getLangChainTools() : [];
+    const excelTools: any[] = dto.useTools !== false ? this.excelProcessor.createExcelTools() : [];
     const ragTool = dto.useRag !== false
       ? [this.ragService.asLangChainTool(dto.namespace ?? 'default')]
       : [];
-    const tools: any[] = [...ragTool, ...mcpTools];
 
-    const cacheKey = `${model}:rag=${dto.useRag ?? true}:tools=${dto.useTools ?? true}:${tools.map((t) => t.name).join(',')}:stream`;
-    if (!this.streamingAgentCache.has(cacheKey)) {
-      const llm = buildLlm(this.config, model, true);
-      this.streamingAgentCache.set(cacheKey, createReactAgent({ llm, tools } as any));
-    }
-    const agent = this.streamingAgentCache.get(cacheKey);
+    // ── Per-request UI render tools ────────────────────────────────────────────
+    // Each render tool holds a reference to a request-scoped emit queue, so the
+    // agent CANNOT be cached — a fresh agent is created for every streaming request.
+    const uiQueue: Array<{ id: string; componentType: string; props: unknown }> = [];
+    let uiCounter = 0;
+
+    const renderTools = this.uiRenderer.createRenderTools((componentType, props) => {
+      const id = `ui_${Date.now()}_${uiCounter++}`;
+      uiQueue.push({ id, componentType, props });
+    });
+
+    const tools: any[] = [...ragTool, ...mcpTools, ...mongoTools, ...excelTools, ...renderTools];
+
+    // Streaming agent is created fresh per-request because render tools are request-scoped
+    const llm = buildLlm(this.config, model, true);
+    const agent = createReactAgent({ llm, tools } as any);
 
     let fullContent = '';
     let toolCallCount = 0;
@@ -282,7 +352,35 @@ export class AgentService {
         const rawOutput = event.data?.output;
         const output = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput ?? '');
         yield `data: ${JSON.stringify({ type: 'tool_result', tool: event.name, output })}\n\n`;
+
+        // ── Drain explicit render tool queue (agent called ui_render_* directly) ──
+        while (uiQueue.length > 0) {
+          const uiEvent = uiQueue.shift()!;
+          yield `data: ${JSON.stringify({ type: 'ui_component', ...uiEvent })}\n\n`;
+        }
+
+        // ── Auto-classification fallback ───────────────────────────────────────
+        // If the agent did NOT call a render tool, the classifier inspects the
+        // raw output and picks a component automatically. Explicit agent renders
+        // above always win — classifier only fires when uiQueue was already empty.
+        if (uiQueue.length === 0) {
+          try {
+            const classified = this.resultClassifier.classify(event.name ?? '', output);
+            if (classified) {
+              const id = `auto_${Date.now()}_${uiCounter++}`;
+              yield `data: ${JSON.stringify({ type: 'ui_component', id, ...classified })}\n\n`;
+            }
+          } catch {
+            // classifier errors are non-fatal — silently skip
+          }
+        }
       }
+    }
+
+    // Drain any remaining queued components (edge case: tool fired at end of stream)
+    while (uiQueue.length > 0) {
+      const uiEvent = uiQueue.shift()!;
+      yield `data: ${JSON.stringify({ type: 'ui_component', ...uiEvent })}\n\n`;
     }
 
     const durationMs = Date.now() - startMs;
@@ -306,6 +404,8 @@ export class AgentService {
       type: 'done',
       runId,
       model,
+      skill: skillName,
+      namespace: dto.namespace,
       toolCallCount,
       ragChunksUsed,
       metrics: { durationMs, costUsd, summary: `${toolCallCount} tool call(s) · ${ragChunksUsed} RAG chunk(s) · ${durationMs}ms` },

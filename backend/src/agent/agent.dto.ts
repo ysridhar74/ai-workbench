@@ -28,7 +28,11 @@ export class AgentRequestDto {
 
   @IsString()
   @IsOptional()
-  namespace?: string; // RAG knowledge base namespace to query
+  namespace?: string; // RAG knowledge base namespace — defaults to persona namespace if userId set
+
+  @IsString()
+  @IsOptional()
+  database?: string; // mongo-query default database — defaults to persona database if userId set
 
   @IsBoolean()
   @IsOptional()

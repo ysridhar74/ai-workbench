@@ -1,8 +1,9 @@
 [
   {
+    "_comment": "mongodb-query is now handled natively in-process by MongoQueryService. Kept here for use with external tools like Claude Desktop.",
     "name": "mongodb-query",
-    "description": "Natural language MongoDB querying — schema discovery, NL-to-aggregation-pipeline, and direct pipeline execution against your entity and trading partner collections",
-    "enabled": true,
+    "description": "Natural language MongoDB querying — schema discovery, NL-to-aggregation-pipeline, and direct pipeline execution",
+    "enabled": false,
     "transport": "stdio",
     "command": "npx",
     "args": ["tsx", "${MONGODB_QUERY_MCP_PATH}/src/index.ts"],

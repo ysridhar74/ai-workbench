@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import OpenAI, { AzureOpenAI } from 'openai';
 
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
@@ -16,46 +16,74 @@ export interface LlmResponse {
 }
 
 /**
- * LlmService wraps LiteLLM (via its OpenAI-compatible proxy) or the
- * OpenAI SDK directly. The active model and endpoint are driven entirely
- * by environment variables — no model names are hardcoded.
+ * LlmService wraps the OpenAI SDK (or Azure OpenAI SDK) for non-agent completions
+ * such as memory extraction. Provider is selected by LLM_PROVIDER env var:
  *
- * To use LiteLLM proxy: set LLM_BASE_URL to the proxy URL (e.g. http://localhost:4000)
- * To call providers directly: leave LLM_BASE_URL unset and set the
- *   appropriate provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
- *   LiteLLM's OpenAI-compat layer handles the routing.
+ *   LLM_PROVIDER=azure   → AzureOpenAI client
+ *                          Requires: AZURE_OPENAI_API_KEY, AZURE_OPENAI_INSTANCE_NAME,
+ *                                    AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION
+ *
+ *   (default)            → OpenAI-compatible client
+ *                          Supports: OpenAI direct, LiteLLM proxy, Ollama
+ *                          Requires: OPENAI_API_KEY (or ANTHROPIC_API_KEY / LLM_API_KEY)
+ *                          Optional: LLM_BASE_URL to route through a proxy
  */
 @Injectable()
 export class LlmService {
   private readonly logger = new Logger(LlmService.name);
-  private readonly client: OpenAI;
+  private readonly client: OpenAI | AzureOpenAI;
   private readonly defaultModel: string;
+  private readonly isAzure: boolean;
+  private readonly azureDeployment: string | undefined;
 
   constructor(private readonly config: ConfigService) {
-    const baseURL = this.config.get<string>('LLM_BASE_URL');
-    const apiKey =
-      this.config.get<string>('OPENAI_API_KEY') ||
-      this.config.get<string>('ANTHROPIC_API_KEY') ||
-      this.config.get<string>('LLM_API_KEY') ||
-      'placeholder'; // LiteLLM proxy may not require a real key
+    const provider = (this.config.get<string>('LLM_PROVIDER') ?? '').toLowerCase();
+    this.isAzure = provider === 'azure';
 
-    this.client = new OpenAI({
-      apiKey,
-      ...(baseURL ? { baseURL } : {}),
-    });
+    if (this.isAzure) {
+      const instanceName = this.config.getOrThrow<string>('AZURE_OPENAI_INSTANCE_NAME');
+      this.azureDeployment = this.config.getOrThrow<string>('AZURE_OPENAI_DEPLOYMENT');
+      const apiVersion = this.config.get<string>('AZURE_OPENAI_API_VERSION') ?? '2024-02-01';
 
-    this.defaultModel = this.config.getOrThrow<string>('LLM_MODEL');
-    this.logger.log(`LLM configured — model: ${this.defaultModel}${baseURL ? ` via ${baseURL}` : ''}`);
+      this.client = new AzureOpenAI({
+        apiKey: this.config.getOrThrow<string>('AZURE_OPENAI_API_KEY'),
+        endpoint: `https://${instanceName}.openai.azure.com`,
+        apiVersion,
+        deployment: this.azureDeployment,
+      });
+
+      this.defaultModel = this.azureDeployment; // Azure uses deployment name as model
+      this.logger.log(`LLM configured — Azure OpenAI · deployment: ${this.azureDeployment} · version: ${apiVersion}`);
+    } else {
+      const baseURL = this.config.get<string>('LLM_BASE_URL');
+      const apiKey =
+        this.config.get<string>('OPENAI_API_KEY') ||
+        this.config.get<string>('ANTHROPIC_API_KEY') ||
+        this.config.get<string>('LLM_API_KEY') ||
+        'placeholder'; // LiteLLM proxy may not require a real key
+
+      this.client = new OpenAI({
+        apiKey,
+        ...(baseURL ? { baseURL } : {}),
+      });
+
+      this.defaultModel = this.config.getOrThrow<string>('LLM_MODEL');
+      this.logger.log(`LLM configured — model: ${this.defaultModel}${baseURL ? ` via ${baseURL}` : ''}`);
+    }
   }
 
   /**
    * Send a completion request and return the full response with token metrics.
+   * For Azure, the model param is the deployment name (already set as defaultModel).
    */
   async complete(
     messages: LlmMessage[],
     options?: { model?: string; temperature?: number; maxTokens?: number },
   ): Promise<LlmResponse> {
-    const model = options?.model ?? this.defaultModel;
+    // Azure: always use the configured deployment name — ignore any model override
+    const model = this.isAzure
+      ? (this.azureDeployment ?? this.defaultModel)
+      : (options?.model ?? this.defaultModel);
 
     const response = await this.client.chat.completions.create({
       model,
@@ -84,7 +112,9 @@ export class LlmService {
     messages: LlmMessage[],
     options?: { model?: string; temperature?: number; maxTokens?: number },
   ): AsyncGenerator<{ chunk?: string; done: boolean; metrics?: Omit<LlmResponse, 'content'> }> {
-    const model = options?.model ?? this.defaultModel;
+    const model = this.isAzure
+      ? (this.azureDeployment ?? this.defaultModel)
+      : (options?.model ?? this.defaultModel);
 
     const stream = await this.client.chat.completions.create({
       model,

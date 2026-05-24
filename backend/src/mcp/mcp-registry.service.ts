@@ -5,7 +5,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { DynamicTool } from '@langchain/core/tools';
+import { DynamicStructuredTool } from '@langchain/core/tools';
+import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpServerConfig, McpTool, McpServerStatus } from './mcp.types';
@@ -232,28 +233,16 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
   // LangChain tool adapter
   // ─────────────────────────────────────────────────────────────────────────
 
-  getLangChainTools(): DynamicTool[] {
+  getLangChainTools(): any[] {
     return Array.from(this.tools.values()).map((mcpTool) => {
-      const schemaHint = this.buildSchemaHint(mcpTool.inputSchema);
-      const description =
-        `${mcpTool.description}. ` +
-        `Input must be a JSON string with this shape: ${schemaHint}`;
+      const zodSchema = this.buildZodSchema(mcpTool.inputSchema);
 
-      return new DynamicTool({
+      return new DynamicStructuredTool<any>({
         name: mcpTool.name,
-        description,
-        func: async (input: string): Promise<string> => {
+        description: mcpTool.description,
+        schema: zodSchema,
+        func: async (args: Record<string, unknown>): Promise<string> => {
           try {
-            let args: Record<string, unknown> = {};
-            try {
-              const parsed = JSON.parse(input);
-              args = typeof parsed === 'object' && parsed !== null ? parsed : { path: input };
-            } catch {
-              args =
-                input.trim().startsWith('/') || input.trim().startsWith('~')
-                  ? { path: input.trim() }
-                  : { input: input.trim() };
-            }
             const result = await mcpTool.execute(args);
             return typeof result === 'string' ? result : JSON.stringify(result);
           } catch (err) {
@@ -264,19 +253,46 @@ export class McpRegistryService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private buildSchemaHint(schema: Record<string, unknown>): string {
-    try {
-      const props = (schema as any)?.properties ?? {};
-      const required: string[] = (schema as any)?.required ?? [];
-      const hint: Record<string, string> = {};
-      for (const [key, val] of Object.entries(props)) {
-        const type = (val as any)?.type ?? 'string';
-        hint[key] = required.includes(key) ? `${type} (required)` : `${type} (optional)`;
+  /**
+   * Convert a JSON Schema object into a Zod schema suitable for LangChain structured tools.
+   * We produce a z.object() where every property is optional (the LLM decides what to pass)
+   * unless the JSON Schema marks it as required.
+   */
+  private buildZodSchema(jsonSchema: Record<string, unknown>): z.ZodObject<any> {
+    const props = (jsonSchema as any)?.properties ?? {};
+    const required: string[] = (jsonSchema as any)?.required ?? [];
+    const shape: Record<string, z.ZodTypeAny> = {};
+
+    for (const [key, val] of Object.entries(props)) {
+      const prop = val as any;
+      const description: string | undefined = prop?.description;
+
+      let field: z.ZodTypeAny;
+
+      switch (prop?.type) {
+        case 'number':
+        case 'integer':
+          field = description ? z.number().describe(description) : z.number();
+          break;
+        case 'boolean':
+          field = description ? z.boolean().describe(description) : z.boolean();
+          break;
+        case 'array':
+          field = description ? z.array(z.unknown()).describe(description) : z.array(z.unknown());
+          break;
+        case 'object':
+          field = description ? z.record(z.unknown()).describe(description) : z.record(z.unknown());
+          break;
+        default:
+          // string or unspecified
+          field = description ? z.string().describe(description) : z.string();
       }
-      return JSON.stringify(hint);
-    } catch {
-      return '{}';
+
+      shape[key] = required.includes(key) ? field : field.optional();
     }
+
+    // If the tool has no properties at all (e.g. list_collections), return an empty object schema
+    return z.object(shape);
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,8 @@ import { McpModule } from './mcp/mcp.module';
 import { RagModule } from './rag/rag.module';
 import { AgentModule } from './agent/agent.module';
 import { MemoryModule } from './memory/memory.module';
+import { MongoQueryModule } from './mongo-query/mongo-query.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { MemoryModule } from './memory/memory.module';
     SkillsModule,
     RagModule,
     MemoryModule,
+    MongoQueryModule,
+    UsersModule,
     ChatModule,
     AgentModule,
   ],

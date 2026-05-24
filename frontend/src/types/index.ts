@@ -26,6 +26,14 @@ export interface AgentResult {
   runId: string;
 }
 
+// ── Generative UI ─────────────────────────────────────────────────────────────
+
+export interface UIComponent {
+  id: string;
+  componentType: string; // e.g. "DataTable", "BarChart", "StatsDashboard", "EntityCard"
+  props: unknown;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -36,6 +44,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   toolCallCount?: number;
   ragChunksUsed?: number;
+  /** Generative UI components emitted by the model for this message */
+  uiComponents?: UIComponent[];
 }
 
 // SSE stream event types
@@ -43,8 +53,41 @@ export type StreamEvent =
   | { type: 'chunk'; content: string }
   | { type: 'tool_call'; tool: string; input: unknown }
   | { type: 'tool_result'; tool: string; output: string }
+  | { type: 'ui_component'; id: string; componentType: string; props: unknown }
+  | { type: 'content_replace'; content: string }
   | { type: 'done'; runId: string; model: string; toolCallCount: number; ragChunksUsed: number; metrics: { durationMs: number; costUsd: number; summary: string } }
   | { type: 'error'; message: string };
+
+// ── Users & Personas ─────────────────────────────────────────────────────────
+
+export type PersonaType = 'broker' | 'underwriter' | 'claims';
+
+export interface QuickAction {
+  label: string;
+  prompt: string;
+  icon: string;
+}
+
+export interface PersonaConfig {
+  persona: PersonaType;
+  displayName: string;
+  description: string;
+  color: string;
+  skill: string;
+  ragNamespace: string;
+  defaultDatabase: string;
+  quickActions: QuickAction[];
+}
+
+export interface User {
+  userId: string;
+  name: string;
+  email: string;
+  persona: PersonaType;
+  personaConfig: PersonaConfig;
+  enabled: boolean;
+  preferences: Record<string, unknown>;
+}
 
 // ── Skills ───────────────────────────────────────────────────────────────────
 

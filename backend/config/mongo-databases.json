@@ -1,0 +1,42 @@
+[
+  {
+    "name": "workbench",
+    "label": "AI Workbench (internal)",
+    "description": "The main AI Workbench database — skills, agent runs, memory, RAG documents",
+    "uri": "${MONGODB_URI}",
+    "database": "${MONGODB_DB}",
+    "enabled": true,
+    "readOnly": true
+  },
+
+  {
+    "name": "cds",
+    "label": "common data services",
+    "description": "Customer and trading partner data — entities, contacts, contracts",
+    "uri": "${MONGODB_URI}",
+    "database": "cds",
+    "enabled": false,
+    "readOnly": true
+  },
+
+  {
+    "name": "erp",
+    "label": "ERP",
+    "description": "ERP data — orders, inventory, invoices, strategies, executions",
+    "uri": "${MONGODB_URI}",
+    "database": "erp_db",
+    "enabled": false,
+    "readOnly": true
+  },
+
+  {
+    "_comment": "Example: separate Atlas cluster for analytics / data warehouse",
+    "name": "analytics",
+    "label": "Analytics",
+    "description": "Analytics warehouse — aggregated metrics, reports, dashboards",
+    "uri": "${ANALYTICS_MONGODB_URI}",
+    "database": "analytics",
+    "enabled": false,
+    "readOnly": true
+  }
+]

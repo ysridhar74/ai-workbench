@@ -15,6 +15,7 @@ export const agentApi = {
     useRag?: boolean;
     useTools?: boolean;
     namespace?: string;
+    database?: string;
   }) => api.post('/agent', body).then(r => r.data),
 
   listTools: () => api.get('/agent/tools').then(r => r.data),
@@ -104,14 +105,23 @@ export const memoryApi = {
   clearAll: (userId: string) => api.delete(`/memory/${userId}`),
 };
 
+// ── Users ─────────────────────────────────────────────────────────────────
+
+export const usersApi = {
+  list: () => api.get('/users').then(r => r.data as import('@/types').User[]),
+  get: (userId: string) => api.get(`/users/${userId}`).then(r => r.data as import('@/types').User),
+};
+
 // ── SSE Streaming ─────────────────────────────────────────────────────────
 
 export function streamAgent(
-  body: Parameters<typeof agentApi.run>[0],
+  body: Parameters<typeof agentApi.run>[0] & { database?: string },
   callbacks: {
     onChunk: (text: string) => void;
     onToolCall: (tool: string, input: unknown) => void;
     onToolResult: (tool: string, output: string) => void;
+    onUIComponent: (id: string, componentType: string, props: unknown) => void;
+    onContentReplace: (content: string) => void;
     onDone: (data: { runId: string; model: string; toolCallCount: number; ragChunksUsed: number; metrics: { durationMs: number; costUsd: number; summary: string } }) => void;
     onError: (msg: string) => void;
   },
@@ -149,6 +159,8 @@ export function streamAgent(
           if (evt.type === 'chunk') callbacks.onChunk(evt.content);
           else if (evt.type === 'tool_call') callbacks.onToolCall(evt.tool, evt.input);
           else if (evt.type === 'tool_result') callbacks.onToolResult(evt.tool, evt.output ?? '');
+          else if (evt.type === 'ui_component') callbacks.onUIComponent(evt.id, evt.componentType, evt.props);
+          else if (evt.type === 'content_replace') callbacks.onContentReplace(evt.content);
           else if (evt.type === 'done') callbacks.onDone(evt);
           else if (evt.type === 'error') callbacks.onError(evt.message);
         } catch { /* skip malformed lines */ }
