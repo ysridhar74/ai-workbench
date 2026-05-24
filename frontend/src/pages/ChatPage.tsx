@@ -26,7 +26,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils';
 import { skillsApi, streamAgent } from '@/api/client';
 import { useChatStore } from '@/store/chatStore';
+import { useUserStore } from '@/store/userStore';
 import type { ChatMessage, ToolStep, Skill } from '@/types';
+import { UIComponentBlock } from '@/components/ui-components';
 
 // ── Utility: file download ────────────────────────────────────────────────────
 
@@ -1499,10 +1501,30 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             <StreamingIndicator content={msg.content} />
           ) : (
             <div className="text-left">
-              <MarkdownContent content={msg.content} />
+              {(() => {
+                const text = msg.content.trim();
+                if (!text) return null;
+                const hasComponents = msg.uiComponents && msg.uiComponents.length > 0;
+                // When UI components are present, only show text if it's a short
+                // intro (≤ 160 chars, no newlines) — suppress full prose narration
+                if (hasComponents) {
+                  const isShortIntro = text.length <= 160 && !text.includes('\n');
+                  if (!isShortIntro) return null;
+                }
+                return <MarkdownContent content={text} />;
+              })()}
             </div>
           )}
         </div>
+
+        {/* ── Generative UI Components ───────────────────────────────────── */}
+        {msg.uiComponents && msg.uiComponents.length > 0 && (
+          <div className="space-y-1">
+            {msg.uiComponents.map(component => (
+              <UIComponentBlock key={component.id} component={component} />
+            ))}
+          </div>
+        )}
 
         {/* Tool trace */}
         {msg.steps && msg.steps.length > 0 && (
@@ -1591,7 +1613,17 @@ function ChatInput({
 
 // ── Chat Page ─────────────────────────────────────────────────────────────────
 
-const USER_ID = 'user1'; // TODO: real auth
+const PERSONA_COLORS: Record<string, string> = {
+  broker: 'bg-blue-50 border-blue-200 text-blue-800',
+  underwriter: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+  claims: 'bg-amber-50 border-amber-200 text-amber-800',
+};
+
+const PERSONA_ICON: Record<string, string> = {
+  broker: '🤝',
+  underwriter: '🔍',
+  claims: '📋',
+};
 
 export function ChatPage() {
   const {
@@ -1606,6 +1638,16 @@ export function ChatPage() {
     setUseRag,
     setUseTools,
   } = useChatStore();
+
+  const currentUser = useUserStore((s) => s.currentUser);
+  const setCurrentUser = useUserStore((s) => s.setCurrentUser);
+
+  // Sync skill selector with persona default on first load
+  useEffect(() => {
+    if (currentUser && messages.length === 0) {
+      setSelectedSkill(currentUser.personaConfig.skill);
+    }
+  }, [currentUser?.userId]);
 
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -1648,7 +1690,16 @@ export function ChatPage() {
     const pendingSteps: { tool: string; input: unknown; output: string }[] = [];
 
     const stop = streamAgent(
-      { message: text, skill: selectedSkill, userId: USER_ID, history, useRag, useTools },
+      {
+        message: text,
+        skill: selectedSkill,
+        userId: currentUser?.userId,
+        namespace: currentUser?.personaConfig.ragNamespace,
+        database: currentUser?.personaConfig.defaultDatabase,
+        history,
+        useRag,
+        useTools,
+      },
       {
         onChunk: (chunk) => {
           updateLastAssistant(m => ({ ...m, content: m.content + chunk }));
@@ -1662,6 +1713,15 @@ export function ChatPage() {
           const idx = [...pendingSteps].reverse().findIndex(s => s.tool === tool && s.output === '');
           if (idx !== -1) pendingSteps[pendingSteps.length - 1 - idx].output = output;
           updateLastAssistant(m => ({ ...m, steps: [...pendingSteps] }));
+        },
+        onUIComponent: (id, componentType, props) => {
+          updateLastAssistant(m => ({
+            ...m,
+            uiComponents: [...(m.uiComponents ?? []), { id, componentType, props }],
+          }));
+        },
+        onContentReplace: (content) => {
+          updateLastAssistant(m => ({ ...m, content }));
         },
         onDone: (data) => {
           setIsStreaming(false);
@@ -1693,7 +1753,7 @@ export function ChatPage() {
       },
     );
     stopRef.current = stop;
-  }, [input, isStreaming, messages, selectedSkill, useRag, useTools, addMessage, updateLastAssistant]);
+  }, [input, isStreaming, messages, selectedSkill, useRag, useTools, currentUser, addMessage, updateLastAssistant]);
 
   const handleStop = () => {
     stopRef.current?.();
@@ -1710,6 +1770,19 @@ export function ChatPage() {
           <Sparkles className="w-4 h-4 text-primary" />
           <h1 className="font-semibold text-sm">Agent Chat</h1>
         </div>
+
+        {/* Persona badge */}
+        {currentUser && (
+          <div className={cn(
+            'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium',
+            PERSONA_COLORS[currentUser.persona] ?? 'bg-gray-50 border-gray-200 text-gray-700',
+          )}>
+            <span>{PERSONA_ICON[currentUser.persona] ?? '👤'}</span>
+            <span>{currentUser.name}</span>
+            <span className="opacity-60">·</span>
+            <span>{currentUser.personaConfig.displayName}</span>
+          </div>
+        )}
 
         <div className="flex items-center gap-3 ml-auto">
           {/* Skill selector */}
@@ -1762,6 +1835,16 @@ export function ChatPage() {
             <Wrench className="w-3 h-3" />
             Tools {useTools ? 'on' : 'off'}
           </button>
+
+          {/* Switch user */}
+          <button
+            onClick={() => setCurrentUser(null)}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border bg-muted border-border text-muted-foreground hover:text-foreground transition-colors"
+            title="Switch user"
+          >
+            <Bot className="w-3 h-3" />
+            Switch
+          </button>
         </div>
       </div>
 
@@ -1769,28 +1852,163 @@ export function ChatPage() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden py-4 w-full">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full py-24 text-center px-6">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-              <Sparkles className="w-6 h-6 text-primary" />
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 text-2xl"
+              style={{ background: currentUser?.personaConfig?.color ? `${currentUser.personaConfig.color}18` : undefined }}
+            >
+              {currentUser?.persona === 'broker' ? '🤝' : currentUser?.persona === 'underwriter' ? '🔍' : currentUser?.persona === 'claims' ? '📋' : <Sparkles className="w-6 h-6 text-primary" />}
             </div>
-            <h2 className="text-lg font-semibold mb-1">How can I help?</h2>
+            <h2 className="text-lg font-semibold mb-1">
+              Hi {currentUser?.name?.split(' ')[0] ?? 'there'}, how can I help?
+            </h2>
             <p className="text-sm text-muted-foreground max-w-md">
-              Ask anything. I can search your knowledge base, use tools, and remember context across sessions.
+              {currentUser?.personaConfig?.description ?? 'Ask anything. I can search your knowledge base, use tools, and remember context across sessions.'}
             </p>
-            <div className="mt-6 flex flex-wrap gap-2 justify-center">
-              {[
-                'What is RAG and how does it work?',
-                'List files in the workspace',
-                'Summarize what you know about me',
-              ].map(suggestion => (
+            <div className="mt-6 flex flex-wrap gap-2 justify-center max-w-xl">
+              {(currentUser?.personaConfig?.quickActions ?? []).map(action => (
                 <button
-                  key={suggestion}
-                  onClick={() => setInput(suggestion)}
-                  className="text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-muted transition-colors"
+                  key={action.label}
+                  onClick={() => setInput(action.prompt)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-muted transition-colors"
                 >
-                  {suggestion}
+                  <span>{action.icon}</span>
+                  <span>{action.label}</span>
                 </button>
               ))}
             </div>
+
+            {/* ── Dev: UI component preview ───────────────────────────── */}
+            <button
+              onClick={() => {
+                addMessage({ id: 'dev-user', role: 'user', content: '🧪 UI component preview' });
+                addMessage({
+                  id: 'dev-assistant',
+                  role: 'assistant',
+                  content: 'Here is a preview of all available generative UI components:',
+                  uiComponents: [
+                    {
+                      id: 'test-stats',
+                      componentType: 'StatsDashboard',
+                      props: {
+                        title: 'Sales Overview',
+                        stats: [
+                          { label: 'Total Revenue', value: 1284500, unit: '$', icon: '💰', color: '#6366f1', delta: 12400 },
+                          { label: 'Active Partners', value: 342, icon: '🤝', color: '#10b981', delta: 8 },
+                          { label: 'Avg Contract Value', value: 24300, unit: '$', icon: '📄', color: '#f59e0b', delta: -1200 },
+                          { label: 'Open Orders', value: 58, icon: '📦', color: '#f43f5e' },
+                        ],
+                      },
+                    },
+                    {
+                      id: 'test-bar',
+                      componentType: 'BarChart',
+                      props: {
+                        title: 'Trading Partners by Country',
+                        data: [
+                          { label: 'Germany', value: 84 },
+                          { label: 'USA', value: 72 },
+                          { label: 'France', value: 61 },
+                          { label: 'UK', value: 55 },
+                          { label: 'Netherlands', value: 43 },
+                          { label: 'Spain', value: 38 },
+                        ],
+                      },
+                    },
+                    {
+                      id: 'test-line',
+                      componentType: 'LineChart',
+                      props: {
+                        title: 'Monthly Revenue Trend',
+                        xLabels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                        series: [
+                          { label: 'Revenue', data: [84000, 92000, 87000, 105000, 118000, 131000], color: '#6366f1' },
+                          { label: 'Target', data: [90000, 90000, 95000, 100000, 110000, 120000], color: '#e2e8f0' },
+                        ],
+                      },
+                    },
+                    {
+                      id: 'test-table',
+                      componentType: 'DataTable',
+                      props: {
+                        title: 'Recent Agent Runs',
+                        caption: 'Last 5 runs from the workbench database',
+                        data: [
+                          { skill: 'general-assistant', tokens: 1240, cost: '$0.00310', duration: '3.2s', status: 'success' },
+                          { skill: 'html-builder', tokens: 3890, cost: '$0.00972', duration: '8.1s', status: 'success' },
+                          { skill: 'general-assistant', tokens: 890, cost: '$0.00223', duration: '2.4s', status: 'success' },
+                          { skill: 'summarizer', tokens: 2100, cost: '$0.00525', duration: '4.7s', status: 'success' },
+                          { skill: 'general-assistant', tokens: 560, cost: '$0.00140', duration: '1.8s', status: 'error' },
+                        ],
+                      },
+                    },
+                    {
+                      id: 'test-entity',
+                      componentType: 'EntityCard',
+                      props: {
+                        title: 'Acme Corporation',
+                        subtitle: 'Trading Partner · ID: TP-00412',
+                        badge: 'Active',
+                        badgeColor: '#10b981',
+                        tags: ['Tier 1', 'Europe', 'Manufacturing'],
+                        fields: {
+                          Country: 'Germany',
+                          Industry: 'Automotive',
+                          'Contract Value': '$2.4M',
+                          'Since': '2019-03-15',
+                          'Primary Contact': 'Hans Müller',
+                          'Email': 'h.muller@acme.de',
+                          'Phone': '+49 89 1234567',
+                          'Last Order': '2026-04-28',
+                          'Open Invoices': 3,
+                          'Credit Limit': '$500,000',
+                        },
+                      },
+                    },
+                    {
+                      id: 'test-timeline',
+                      componentType: 'Timeline',
+                      props: {
+                        title: 'Order Lifecycle',
+                        events: [
+                          { date: '2026-04-01', label: 'Order Placed', description: 'PO-8821 submitted by procurement', icon: '📝', color: '#6366f1' },
+                          { date: '2026-04-03', label: 'Supplier Confirmed', description: 'Acme GmbH accepted the order', icon: '✅', color: '#10b981' },
+                          { date: '2026-04-12', label: 'Shipped', description: 'Tracking: DHL 1Z999AA1012345678', icon: '🚚', color: '#f59e0b' },
+                          { date: '2026-04-18', label: 'Delivered', description: 'Received at warehouse DE-MUC-03', icon: '📦', color: '#10b981' },
+                          { date: '2026-04-20', label: 'Invoice Issued', description: 'INV-2026-00412 · €84,200', icon: '🧾', color: '#8b5cf6' },
+                        ],
+                      },
+                    },
+                    {
+                      id: 'test-alert',
+                      componentType: 'AlertPanel',
+                      props: {
+                        type: 'warning',
+                        title: '3 contracts expiring this month',
+                        message: 'The following partners have contracts due for renewal:',
+                        items: ['Acme Corporation — expires 2026-05-31', 'GlobalTrade GmbH — expires 2026-05-28', 'Pacific Imports Ltd — expires 2026-05-15'],
+                      },
+                    },
+                    {
+                      id: 'test-kv',
+                      componentType: 'KeyValueList',
+                      props: {
+                        title: 'Database Collections',
+                        items: [
+                          { key: 'strategies', value: '24 documents' },
+                          { key: 'executions', value: '1,842 documents' },
+                          { key: 'trading_partners', value: '342 documents' },
+                          { key: 'orders', value: '12,450 documents' },
+                          { key: 'invoices', value: '8,921 documents' },
+                        ],
+                      },
+                    },
+                  ],
+                });
+              }}
+              className="mt-4 text-xs px-3 py-1.5 rounded-full border border-dashed border-slate-300 bg-white text-slate-400 hover:text-slate-600 hover:border-slate-400 transition-colors"
+            >
+              🧪 Preview UI components
+            </button>
           </div>
         )}
 
