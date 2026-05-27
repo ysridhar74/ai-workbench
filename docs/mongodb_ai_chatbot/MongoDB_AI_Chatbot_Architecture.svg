@@ -1,0 +1,261 @@
+<svg viewBox="0 0 860 1260" xmlns="http://www.w3.org/2000/svg" style="background:#0f1729">
+  <defs>
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0c2340"/>
+      <stop offset="100%" style="stop-color:#0f2d4a"/>
+    </linearGradient>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <!-- BG -->
+  <rect width="860" height="1260" fill="#0f1729"/>
+
+  <!-- TITLE -->
+  <text x="430" y="34" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#93c5fd">MongoDB Atlas AI Chatbot — Architecture</text>
+  <text x="430" y="52" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">TypeScript · LangChain · LangGraph · Agentic Tool Routing</text>
+
+  <!-- LEGEND -->
+  <rect x="100" y="62" width="11" height="11" rx="2" fill="#3b82f6"/>
+  <text x="115" y="72" font-family="Arial" font-size="9" fill="#94a3b8">Text-to-MQL</text>
+  <rect x="210" y="62" width="11" height="11" rx="2" fill="#8b5cf6"/>
+  <text x="225" y="72" font-family="Arial" font-size="9" fill="#94a3b8">RAG / Vector</text>
+  <rect x="310" y="62" width="11" height="11" rx="2" fill="#f59e0b"/>
+  <text x="325" y="72" font-family="Arial" font-size="9" fill="#94a3b8">Atlas Search</text>
+  <rect x="430" y="62" width="11" height="11" rx="2" fill="#22c55e"/>
+  <text x="445" y="72" font-family="Arial" font-size="9" fill="#94a3b8">Utility</text>
+
+  <!-- USER BOX -->
+  <rect x="40" y="84" width="780" height="58" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <text x="72" y="118" font-family="Arial" font-size="22">👤</text>
+  <text x="104" y="108" font-family="Arial" font-size="13" font-weight="bold" fill="#e2e8f0">User — Natural Language Question</text>
+  <text x="104" y="126" font-family="Arial" font-size="9" fill="#64748b">"Show top 5 customers by spend"  ·  "Find jackets similar to a parka"  ·  "Search bluetooth (fuzzy)"</text>
+
+  <!-- Arrow -->
+  <line x1="430" y1="142" x2="430" y2="158" stroke="#334155" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- AGENT BOX -->
+  <rect x="40" y="160" width="780" height="282" rx="12" fill="url(#agentGrad)" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="40" y="160" width="780" height="32" rx="12" fill="#0f2d4a"/>
+  <rect x="40" y="180" width="780" height="12" fill="#0f2d4a"/>
+  <rect x="56" y="167" width="90" height="18" rx="9" fill="#3b82f6"/>
+  <text x="101" y="180" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold" fill="white">LANGGRAPH</text>
+  <text x="162" y="180" font-family="Arial" font-size="13" font-weight="bold" fill="#93c5fd">ReAct Agent</text>
+  <text x="730" y="180" font-family="Arial" font-size="9" fill="#475569">claude-sonnet / gpt-4o</text>
+
+  <!-- Steps -->
+  <text x="56" y="211" font-family="Arial" font-size="8" font-weight="bold" fill="#475569">REACT LOOP</text>
+  <rect x="56" y="216" width="62" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="87" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">1. Receive</text>
+  <rect x="124" y="216" width="62" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="155" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">2. Reason</text>
+  <rect x="192" y="216" width="84" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="234" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">3. Inspect Schema</text>
+  <rect x="282" y="216" width="74" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="319" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">4. Select Tool</text>
+  <rect x="362" y="216" width="62" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="393" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">5. Execute</text>
+  <rect x="430" y="216" width="90" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="475" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">6. Observe/Retry</text>
+  <rect x="526" y="216" width="102" height="18" rx="4" fill="#0f172a" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="577" y="229" text-anchor="middle" font-family="Arial" font-size="8" fill="#7dd3fc">7. Format &amp; Stream</text>
+
+  <!-- Tools label -->
+  <text x="56" y="252" font-family="Arial" font-size="8" font-weight="bold" fill="#475569">REGISTERED TOOLS</text>
+
+  <!-- Tool row 1 -->
+  <rect x="56" y="258" width="186" height="72" rx="7" fill="#0a1e30" stroke="#1d4ed8" stroke-width="1"/>
+  <text x="66" y="274" font-family="Courier New" font-size="10" font-weight="bold" fill="#60a5fa">schema_inspector</text>
+  <text x="66" y="289" font-family="Arial" font-size="8" fill="#94a3b8">Fetches sample docs + index info.</text>
+  <text x="66" y="302" font-family="Arial" font-size="8" fill="#94a3b8">Called FIRST before generating</text>
+  <text x="66" y="315" font-family="Arial" font-size="8" fill="#94a3b8">any query to understand schema.</text>
+
+  <rect x="250" y="258" width="186" height="72" rx="7" fill="#0a1e30" stroke="#1d4ed8" stroke-width="1"/>
+  <text x="260" y="274" font-family="Courier New" font-size="10" font-weight="bold" fill="#60a5fa">query_executor</text>
+  <text x="260" y="289" font-family="Arial" font-size="8" fill="#94a3b8">Runs generated MQL find().</text>
+  <text x="260" y="302" font-family="Arial" font-size="8" fill="#94a3b8">Filter, projection, sort,</text>
+  <text x="260" y="315" font-family="Arial" font-size="8" fill="#94a3b8">and limit parameters.</text>
+
+  <rect x="444" y="258" width="186" height="72" rx="7" fill="#0a1e30" stroke="#1d4ed8" stroke-width="1"/>
+  <text x="454" y="274" font-family="Courier New" font-size="10" font-weight="bold" fill="#60a5fa">aggregation_runner</text>
+  <text x="454" y="289" font-family="Arial" font-size="8" fill="#94a3b8">Runs aggregation pipelines:</text>
+  <text x="454" y="302" font-family="Arial" font-size="8" fill="#94a3b8">$group, $lookup, $sort,</text>
+  <text x="454" y="315" font-family="Arial" font-size="8" fill="#94a3b8">$count, $project.</text>
+
+  <!-- Prompt hints -->
+  <rect x="638" y="258" width="172" height="72" rx="7" fill="#0a1220" stroke="#1e293b" stroke-width="1"/>
+  <text x="724" y="274" text-anchor="middle" font-family="Arial" font-size="7" font-weight="bold" fill="#475569">SYSTEM PROMPT MUST INCLUDE</text>
+  <text x="648" y="288" font-family="Arial" font-size="7.5" fill="#64748b">• Collection names + descriptions</text>
+  <text x="648" y="300" font-family="Arial" font-size="7.5" fill="#64748b">• Field types (ObjectId, ISODate...)</text>
+  <text x="648" y="312" font-family="Arial" font-size="7.5" fill="#64748b">• Example NL -&gt; MQL mappings</text>
+  <text x="648" y="324" font-family="Arial" font-size="7.5" fill="#64748b">• Default limits + error recovery</text>
+
+  <!-- Tool row 2 -->
+  <rect x="56" y="338" width="186" height="72" rx="7" fill="#1a0f35" stroke="#6d28d9" stroke-width="1"/>
+  <text x="66" y="354" font-family="Courier New" font-size="10" font-weight="bold" fill="#a78bfa">vector_search</text>
+  <text x="66" y="369" font-family="Arial" font-size="8" fill="#94a3b8">$vectorSearch aggregation.</text>
+  <text x="66" y="382" font-family="Arial" font-size="8" fill="#94a3b8">Semantic similarity over</text>
+  <text x="66" y="395" font-family="Arial" font-size="8" fill="#94a3b8">embedded documents.</text>
+
+  <rect x="250" y="338" width="186" height="72" rx="7" fill="#1c120a" stroke="#b45309" stroke-width="1"/>
+  <text x="260" y="354" font-family="Courier New" font-size="10" font-weight="bold" fill="#fbbf24">atlas_text_search</text>
+  <text x="260" y="369" font-family="Arial" font-size="8" fill="#94a3b8">$search aggregation stage.</text>
+  <text x="260" y="382" font-family="Arial" font-size="8" fill="#94a3b8">Keyword, fuzzy, phrase,</text>
+  <text x="260" y="395" font-family="Arial" font-size="8" fill="#94a3b8">autocomplete queries.</text>
+
+  <rect x="444" y="338" width="186" height="72" rx="7" fill="#0f1c14" stroke="#166534" stroke-width="1"/>
+  <text x="454" y="354" font-family="Courier New" font-size="10" font-weight="bold" fill="#4ade80">result_formatter</text>
+  <text x="454" y="369" font-family="Arial" font-size="8" fill="#94a3b8">Formats raw DB results into</text>
+  <text x="454" y="382" font-family="Arial" font-size="8" fill="#94a3b8">readable tables or natural</text>
+  <text x="454" y="395" font-family="Arial" font-size="8" fill="#94a3b8">language summaries.</text>
+
+  <!-- Arrow down -->
+  <line x1="430" y1="442" x2="430" y2="458" stroke="#334155" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- DB LAYER -->
+  <rect x="40" y="460" width="248" height="108" rx="10" fill="#071b30" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="164" y="490" text-anchor="middle" font-family="Arial" font-size="20">&#x1F5C4;</text>
+  <text x="164" y="510" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#60a5fa">MongoDB Atlas — MQL</text>
+  <text x="164" y="526" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">find() · aggregate()</text>
+  <text x="164" y="540" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">$match · $group · $lookup</text>
+  <text x="164" y="554" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">$sort · $limit · $project</text>
+
+  <rect x="306" y="460" width="248" height="108" rx="10" fill="#12072a" stroke="#6d28d9" stroke-width="1.5"/>
+  <text x="430" y="490" text-anchor="middle" font-family="Arial" font-size="20">&#x1F9E0;</text>
+  <text x="430" y="510" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#a78bfa">Atlas Vector Search</text>
+  <text x="430" y="526" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">$vectorSearch aggregation</text>
+  <text x="430" y="540" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">HNSW index on embedding</text>
+  <text x="430" y="554" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">Cosine / dot-product</text>
+
+  <rect x="572" y="460" width="248" height="108" rx="10" fill="#150d02" stroke="#b45309" stroke-width="1.5"/>
+  <text x="696" y="490" text-anchor="middle" font-family="Arial" font-size="20">&#x1F50D;</text>
+  <text x="696" y="510" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#fbbf24">Atlas Full-Text Search</text>
+  <text x="696" y="526" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">$search (Lucene engine)</text>
+  <text x="696" y="540" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">fuzzy · phrase · wildcard</text>
+  <text x="696" y="554" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#64748b">autocomplete · highlight</text>
+
+  <!-- DIVIDER -->
+  <line x1="40" y1="590" x2="820" y2="590" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- WHEN TO USE -->
+  <text x="430" y="614" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#93c5fd">When to Use Each Approach</text>
+
+  <rect x="40" y="624" width="248" height="172" rx="10" fill="#071b30" stroke="#1d4ed8" stroke-width="1.5"/>
+  <rect x="40" y="624" width="248" height="28" rx="10" fill="#0f2d4a"/>
+  <rect x="40" y="640" width="248" height="12" fill="#0f2d4a"/>
+  <text x="164" y="643" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#60a5fa">① Text-to-MQL</text>
+  <text x="56" y="667" font-family="Arial" font-size="9" font-weight="bold" fill="#93c5fd">Use when:</text>
+  <text x="56" y="683" font-family="Arial" font-size="8.5" fill="#94a3b8">• Structured data (orders, users)</text>
+  <text x="56" y="699" font-family="Arial" font-size="8.5" fill="#94a3b8">• Filter by field / date range</text>
+  <text x="56" y="715" font-family="Arial" font-size="8.5" fill="#94a3b8">• Aggregations, counts, averages</text>
+  <text x="56" y="731" font-family="Arial" font-size="8.5" fill="#94a3b8">• Joining collections ($lookup)</text>
+  <text x="56" y="747" font-family="Arial" font-size="8.5" fill="#94a3b8">• Real-time analytics dashboards</text>
+  <text x="56" y="763" font-family="Arial" font-size="8.5" fill="#94a3b8">• Top-N ranking queries</text>
+  <text x="56" y="779" font-family="Arial" font-size="8.5" fill="#94a3b8">• Precise numerical comparisons</text>
+
+  <rect x="306" y="624" width="248" height="172" rx="10" fill="#12072a" stroke="#6d28d9" stroke-width="1.5"/>
+  <rect x="306" y="624" width="248" height="28" rx="10" fill="#1a0f35"/>
+  <rect x="306" y="640" width="248" height="12" fill="#1a0f35"/>
+  <text x="430" y="643" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#a78bfa">② RAG + Vector Search</text>
+  <text x="322" y="667" font-family="Arial" font-size="9" font-weight="bold" fill="#c4b5fd">Use when:</text>
+  <text x="322" y="683" font-family="Arial" font-size="8.5" fill="#94a3b8">• Unstructured text (notes, docs)</text>
+  <text x="322" y="699" font-family="Arial" font-size="8.5" fill="#94a3b8">• Semantic similarity ("like X")</text>
+  <text x="322" y="715" font-family="Arial" font-size="8.5" fill="#94a3b8">• Q&amp;A over document collections</text>
+  <text x="322" y="731" font-family="Arial" font-size="8.5" fill="#94a3b8">• Knowledge base / FAQ chat</text>
+  <text x="322" y="747" font-family="Arial" font-size="8.5" fill="#94a3b8">• Product description matching</text>
+  <text x="322" y="763" font-family="Arial" font-size="8.5" fill="#94a3b8">• Support ticket analysis</text>
+  <text x="322" y="779" font-family="Arial" font-size="8.5" fill="#94a3b8">• Meaning-based retrieval</text>
+
+  <rect x="572" y="624" width="248" height="172" rx="10" fill="#150d02" stroke="#b45309" stroke-width="1.5"/>
+  <rect x="572" y="624" width="248" height="28" rx="10" fill="#1c120a"/>
+  <rect x="572" y="640" width="248" height="12" fill="#1c120a"/>
+  <text x="696" y="643" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#fbbf24">③ Atlas Full-Text Search</text>
+  <text x="588" y="667" font-family="Arial" font-size="9" font-weight="bold" fill="#fde68a">Use when:</text>
+  <text x="588" y="683" font-family="Arial" font-size="8.5" fill="#94a3b8">• Keyword / phrase search</text>
+  <text x="588" y="699" font-family="Arial" font-size="8.5" fill="#94a3b8">• Fuzzy / typo-tolerant matching</text>
+  <text x="588" y="715" font-family="Arial" font-size="8.5" fill="#94a3b8">• Autocomplete / search-as-type</text>
+  <text x="588" y="731" font-family="Arial" font-size="8.5" fill="#94a3b8">• Name / tag / label lookups</text>
+  <text x="588" y="747" font-family="Arial" font-size="8.5" fill="#94a3b8">• Wildcard text search</text>
+  <text x="588" y="763" font-family="Arial" font-size="8.5" fill="#94a3b8">• Search-bar / e-commerce</text>
+  <text x="588" y="779" font-family="Arial" font-size="8.5" fill="#94a3b8">• Highlighted result snippets</text>
+
+  <!-- DIVIDER -->
+  <line x1="40" y1="814" x2="820" y2="814" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- DECISION MATRIX -->
+  <text x="430" y="838" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#93c5fd">Decision Matrix</text>
+
+  <!-- Header -->
+  <rect x="40" y="846" width="780" height="24" fill="#0f2d4a"/>
+  <text x="195" y="862" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#93c5fd">Query / Scenario</text>
+  <line x1="360" y1="846" x2="360" y2="1164" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="488" y="862" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#60a5fa">Text-to-MQL</text>
+  <line x1="572" y1="846" x2="572" y2="1164" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="660" y="862" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#a78bfa">RAG + Vector</text>
+  <line x1="750" y1="846" x2="750" y2="1164" stroke="#1e3a5f" stroke-width="1"/>
+  <text x="795" y="862" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#fbbf24">Atlas Search</text>
+
+  <rect x="40" y="870" width="780" height="22" fill="#0a1220"/>
+  <text x="50" y="885" font-family="Arial" font-size="8.5" fill="#cbd5e1">Filter by field value (status, date, price)</text>
+  <text x="488" y="885" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+  <text x="660" y="885" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="795" y="885" text-anchor="middle" font-family="Arial" font-size="9" fill="#fbbf24">⚠️ Text fields only</text>
+
+  <rect x="40" y="892" width="780" height="22" fill="#0d1830"/>
+  <text x="50" y="907" font-family="Arial" font-size="8.5" fill="#cbd5e1">Aggregation — group, count, sum, average</text>
+  <text x="488" y="907" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+  <text x="660" y="907" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="795" y="907" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+
+  <rect x="40" y="914" width="780" height="22" fill="#0a1220"/>
+  <text x="50" y="929" font-family="Arial" font-size="8.5" fill="#cbd5e1">Join multiple collections ($lookup)</text>
+  <text x="488" y="929" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+  <text x="660" y="929" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="795" y="929" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+
+  <rect x="40" y="936" width="780" height="22" fill="#0d1830"/>
+  <text x="50" y="951" font-family="Arial" font-size="8.5" fill="#cbd5e1">Semantic similarity ("find items like X")</text>
+  <text x="488" y="951" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="660" y="951" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+  <text x="795" y="951" text-anchor="middle" font-family="Arial" font-size="9" fill="#fbbf24">⚠️ Keyword only</text>
+
+  <rect x="40" y="958" width="780" height="22" fill="#0a1220"/>
+  <text x="50" y="973" font-family="Arial" font-size="8.5" fill="#cbd5e1">Q&amp;A over unstructured documents</text>
+  <text x="488" y="973" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="660" y="973" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+  <text x="795" y="973" text-anchor="middle" font-family="Arial" font-size="9" fill="#fbbf24">⚠️ Partial</text>
+
+  <rect x="40" y="980" width="780" height="22" fill="#0d1830"/>
+  <text x="50" y="995" font-family="Arial" font-size="8.5" fill="#cbd5e1">Fuzzy / typo-tolerant keyword search</text>
+  <text x="488" y="995" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="660" y="995" text-anchor="middle" font-family="Arial" font-size="9" fill="#4ade80">✅ Works well</text>
+  <text x="795" y="995" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+
+  <rect x="40" y="1002" width="780" height="22" fill="#0a1220"/>
+  <text x="50" y="1017" font-family="Arial" font-size="8.5" fill="#cbd5e1">Autocomplete / search-as-you-type</text>
+  <text x="488" y="1017" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="660" y="1017" text-anchor="middle" font-family="Arial" font-size="9" fill="#fbbf24">⚠️ Slow</text>
+  <text x="795" y="1017" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+
+  <rect x="40" y="1024" width="780" height="22" fill="#0d1830"/>
+  <text x="50" y="1039" font-family="Arial" font-size="8.5" fill="#cbd5e1">Real-time analytics / ranking top-N</text>
+  <text x="488" y="1039" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="#4ade80">✅ Best choice</text>
+  <text x="660" y="1039" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+  <text x="795" y="1039" text-anchor="middle" font-family="Arial" font-size="9" fill="#f87171">❌ Not suitable</text>
+
+  <rect x="40" y="1046" width="780" height="22" fill="#0c1635"/>
+  <text x="50" y="1061" font-family="Arial" font-size="8.5" fill="#cbd5e1">Mixed: structured + unstructured data</text>
+  <text x="488" y="1061" text-anchor="middle" font-family="Arial" font-size="9" fill="#818cf8">🔀 Combine all 3</text>
+  <text x="660" y="1061" text-anchor="middle" font-family="Arial" font-size="9" fill="#818cf8">🔀 Combine all 3</text>
+  <text x="795" y="1061" text-anchor="middle" font-family="Arial" font-size="9" fill="#818cf8">🔀 Combine all 3</text>
+
+  <!-- Table border -->
+  <rect x="40" y="846" width="780" height="222" fill="none" stroke="#1e3a5f" stroke-width="1"/>
+  <line x1="40" y1="870" x2="820" y2="870" stroke="#1e3a5f" stroke-width="1"/>
+
+  <!-- FOOTER -->
+  <line x1="40" y1="1088" x2="820" y2="1088" stroke="#1e293b" stroke-width="1"/>
+  <text x="430" y="1108" text-anchor="middle" font-family="Arial" font-size="8.5" fill="#475569">All three approaches are registered as separate LangGraph tools — the LLM autonomously routes each question to the correct tool.</text>
+  <text x="430" y="1124" text-anchor="middle" font-family="Arial" font-size="8" fill="#334155">Security: read-only MongoDB user · validate generated MQL · block $where / $function operators</text>
+</svg>

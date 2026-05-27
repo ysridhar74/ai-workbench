@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MongoDB AI Chatbot Architecture</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #0f1729; color: #e2e8f0; padding: 32px 24px 48px; }
+.container { max-width: 1000px; margin: 0 auto; }
+h1 { text-align: center; font-size: 20px; color: #93c5fd; margin-bottom: 4px; }
+.sub { text-align: center; font-size: 11px; color: #475569; margin-bottom: 18px; }
+.legend { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin-bottom: 22px; }
+.leg { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; }
+.leg-dot { width: 12px; height: 12px; border-radius: 3px; }
+.user-box { display: flex; align-items: center; gap: 12px; background: #1e293b; border: 1.5px solid #334155; border-radius: 10px; padding: 12px 18px; margin-bottom: 6px; }
+.user-icon { font-size: 26px; }
+.user-label { font-size: 13px; font-weight: bold; color: #e2e8f0; }
+.user-sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+.arrow-center { text-align: center; color: #334155; font-size: 18px; padding: 4px 0; }
+.agent-box { background: linear-gradient(135deg,#0c2340,#0f2d4a); border: 2px solid #3b82f6; border-radius: 12px; padding: 16px; margin-bottom: 6px; }
+.agent-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.badge { background: #3b82f6; color: white; font-size: 10px; font-weight: bold; padding: 2px 10px; border-radius: 20px; }
+.agent-title { font-size: 14px; font-weight: bold; color: #93c5fd; }
+.agent-meta { font-size: 10px; color: #475569; margin-left: auto; }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.step { background: #0f172a; border: 1px solid #1e3a5f; border-radius: 5px; padding: 4px 9px; font-size: 10px; color: #7dd3fc; }
+.tools-label { font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+.tools-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tool { border-radius: 7px; padding: 9px 11px; border: 1px solid; }
+.tool .t-name { font-size: 10px; font-weight: bold; font-family: 'Courier New', monospace; margin-bottom: 3px; }
+.tool .t-desc { font-size: 9px; color: #94a3b8; line-height: 1.45; }
+.tool-mql { background: #0a1e30; border-color: #1d4ed8; } .tool-mql .t-name { color: #60a5fa; }
+.tool-vec { background: #1a0f35; border-color: #6d28d9; } .tool-vec .t-name { color: #a78bfa; }
+.tool-srch { background: #1c120a; border-color: #b45309; } .tool-srch .t-name { color: #fbbf24; }
+.tool-util { background: #0f1c14; border-color: #166534; } .tool-util .t-name { color: #4ade80; }
+.db-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.db-card { border-radius: 10px; padding: 14px; border: 1.5px solid; text-align: center; }
+.db-icon { font-size: 24px; margin-bottom: 5px; }
+.db-name { font-size: 11px; font-weight: bold; margin-bottom: 4px; }
+.db-sub { font-size: 9px; color: #64748b; line-height: 1.5; }
+.db-mql { background: #071b30; border-color: #1d4ed8; } .db-mql .db-name { color: #60a5fa; }
+.db-vec { background: #12072a; border-color: #6d28d9; } .db-vec .db-name { color: #a78bfa; }
+.db-srch { background: #150d02; border-color: #b45309; } .db-srch .db-name { color: #fbbf24; }
+.hr { height: 1px; background: #1e293b; margin: 20px 0; }
+.sec-title { text-align: center; font-size: 13px; font-weight: bold; color: #93c5fd; margin-bottom: 12px; }
+.when-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.when-card { border-radius: 10px; padding: 13px; border: 1.5px solid; }
+.when-title { font-size: 11px; font-weight: bold; margin-bottom: 7px; }
+.when-list { list-style: none; }
+.when-list li { font-size: 10px; color: #94a3b8; line-height: 1.7; }
+.wc1 { background: #071b30; border-color: #1d4ed8; } .wc1 .when-title { color: #60a5fa; }
+.wc2 { background: #12072a; border-color: #6d28d9; } .wc2 .when-title { color: #a78bfa; }
+.wc3 { background: #150d02; border-color: #b45309; } .wc3 .when-title { color: #fbbf24; }
+table { width: 100%; border-collapse: collapse; font-size: 10px; }
+th { background: #0f2d4a; color: #93c5fd; padding: 8px 10px; text-align: left; border: 1px solid #1e3a5f; font-weight: 600; }
+td { padding: 7px 10px; border: 1px solid #1e293b; color: #cbd5e1; }
+tr:nth-child(even) td { background: #0a1220; }
+tr:nth-child(odd)  td { background: #0d1830; }
+.g { color: #4ade80; font-weight: bold; }
+.r { color: #f87171; }
+.y { color: #fbbf24; }
+.b { color: #818cf8; font-style: italic; }
+.footer { text-align: center; font-size: 9px; color: #475569; margin-top: 14px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>MongoDB Atlas AI Chatbot — Architecture</h1>
+  <p class="sub">TypeScript · LangChain · LangGraph · Agentic Tool Routing</p>
+
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:#3b82f6"></div> Text-to-MQL</div>
+    <div class="leg"><div class="leg-dot" style="background:#8b5cf6"></div> RAG / Vector Search</div>
+    <div class="leg"><div class="leg-dot" style="background:#f59e0b"></div> Atlas Full-Text Search</div>
+    <div class="leg"><div class="leg-dot" style="background:#22c55e"></div> Utility</div>
+  </div>
+
+  <!-- USER -->
+  <div class="user-box">
+    <div class="user-icon">👤</div>
+    <div>
+      <div class="user-label">User — Natural Language Question</div>
+      <div class="user-sub">"Show top 5 customers by spend last month" · "Find jackets similar to a cozy parka" · "Search bluetooth headphones (fuzzy)"</div>
+    </div>
+  </div>
+  <div class="arrow-center">↓</div>
+
+  <!-- AGENT -->
+  <div class="agent-box">
+    <div class="agent-header">
+      <span class="badge">LANGGRAPH</span>
+      <span class="agent-title">ReAct Agent</span>
+      <span class="agent-meta">claude-sonnet / gpt-4o backbone</span>
+    </div>
+    <div class="steps">
+      <div class="step">1. Receive</div>
+      <div class="step">2. Reason</div>
+      <div class="step">3. Inspect Schema</div>
+      <div class="step">4. Select Tool</div>
+      <div class="step">5. Execute</div>
+      <div class="step">6. Observe / Retry</div>
+      <div class="step">7. Format &amp; Stream</div>
+    </div>
+    <div class="tools-label">🔧 Registered Tools</div>
+    <div class="tools-grid">
+      <div class="tool tool-mql"><div class="t-name">schema_inspector</div><div class="t-desc">Fetches sample docs + index info. Called first before any query to understand data shape.</div></div>
+      <div class="tool tool-mql"><div class="t-name">query_executor</div><div class="t-desc">Runs generated MQL find() queries with filter, projection, sort, and limit.</div></div>
+      <div class="tool tool-mql"><div class="t-name">aggregation_runner</div><div class="t-desc">Executes aggregation pipelines: $group, $lookup, $sort, $count, $project.</div></div>
+      <div class="tool tool-vec"><div class="t-name">vector_search</div><div class="t-desc">$vectorSearch aggregation — semantic similarity over embedded document collections.</div></div>
+      <div class="tool tool-srch"><div class="t-name">atlas_text_search</div><div class="t-desc">$search aggregation stage — keyword, fuzzy, phrase, and autocomplete queries.</div></div>
+      <div class="tool tool-util"><div class="t-name">result_formatter</div><div class="t-desc">Formats raw MongoDB results into readable tables or natural language summaries.</div></div>
+    </div>
+  </div>
+  <div class="arrow-center">↓</div>
+
+  <!-- DB LAYER -->
+  <div class="db-grid">
+    <div class="db-card db-mql"><div class="db-icon">🗄️</div><div class="db-name">MongoDB Atlas — MQL</div><div class="db-sub">find() · aggregate()<br>$match · $group · $lookup<br>$sort · $limit · $project</div></div>
+    <div class="db-card db-vec"><div class="db-icon">🧠</div><div class="db-name">Atlas Vector Search</div><div class="db-sub">$vectorSearch aggregation<br>HNSW index on embedding field<br>Cosine / dot-product similarity</div></div>
+    <div class="db-card db-srch"><div class="db-icon">🔍</div><div class="db-name">Atlas Full-Text Search</div><div class="db-sub">$search aggregation (Lucene)<br>fuzzy · phrase · wildcard<br>autocomplete · highlight</div></div>
+  </div>
+
+  <div class="hr"></div>
+  <div class="sec-title">When to Use Each Approach</div>
+  <div class="when-grid">
+    <div class="when-card wc1">
+      <div class="when-title">① Text-to-MQL</div>
+      <ul class="when-list">
+        <li>🔵 Structured collections (orders, users)</li>
+        <li>🔵 Filter by field value or date range</li>
+        <li>🔵 Aggregations, counts, averages</li>
+        <li>🔵 Joining collections ($lookup)</li>
+        <li>🔵 Real-time analytics / dashboards</li>
+        <li>🔵 Top-N ranking queries</li>
+      </ul>
+    </div>
+    <div class="when-card wc2">
+      <div class="when-title">② RAG + Vector Search</div>
+      <ul class="when-list">
+        <li>🟣 Unstructured text (articles, notes)</li>
+        <li>🟣 Semantic similarity ("find like X")</li>
+        <li>🟣 Q&amp;A over document collections</li>
+        <li>🟣 Knowledge base chat</li>
+        <li>🟣 Product description matching</li>
+        <li>🟣 Support ticket analysis</li>
+      </ul>
+    </div>
+    <div class="when-card wc3">
+      <div class="when-title">③ Atlas Full-Text Search</div>
+      <ul class="when-list">
+        <li>🟡 Keyword / phrase search</li>
+        <li>🟡 Fuzzy / typo-tolerant matching</li>
+        <li>🟡 Autocomplete / search-as-you-type</li>
+        <li>🟡 Name / tag / label lookups</li>
+        <li>🟡 Wildcard text search</li>
+        <li>🟡 Highlighted search results</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="hr"></div>
+  <div class="sec-title">⚡ Decision Matrix</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:38%">Query / Scenario</th>
+        <th style="width:20%">Text-to-MQL</th>
+        <th style="width:22%">RAG + Vector</th>
+        <th style="width:20%">Atlas Search</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Filter by field value (status, date, price)</td><td class="g">✅ Best choice</td><td class="r">❌ Not suitable</td><td class="y">⚠️ Text fields only</td></tr>
+      <tr><td>Aggregation — group, count, sum, average</td><td class="g">✅ Best choice</td><td class="r">❌ Not suitable</td><td class="r">❌ Not suitable</td></tr>
+      <tr><td>Join multiple collections ($lookup)</td><td class="g">✅ Best choice</td><td class="r">❌ Not suitable</td><td class="r">❌ Not suitable</td></tr>
+      <tr><td>Semantic similarity ("find items like X")</td><td class="r">❌ Not suitable</td><td class="g">✅ Best choice</td><td class="y">⚠️ Keyword only</td></tr>
+      <tr><td>Q&amp;A over unstructured documents</td><td class="r">❌ Not suitable</td><td class="g">✅ Best choice</td><td class="y">⚠️ Partial</td></tr>
+      <tr><td>Fuzzy / typo-tolerant keyword search</td><td class="r">❌ Not suitable</td><td class="g">✅ Works well</td><td class="g">✅ Best choice</td></tr>
+      <tr><td>Autocomplete / search-as-you-type</td><td class="r">❌ Not suitable</td><td class="y">⚠️ Slow</td><td class="g">✅ Best choice</td></tr>
+      <tr><td>Real-time analytics / ranking top-N</td><td class="g">✅ Best choice</td><td class="r">❌ Not suitable</td><td class="r">❌ Not suitable</td></tr>
+      <tr style="background:#0c1635 !important"><td>Mixed: structured + unstructured data</td><td class="b">🔀 Combine all 3</td><td class="b">🔀 Combine all 3</td><td class="b">🔀 Combine all 3</td></tr>
+    </tbody>
+  </table>
+
+  <div class="hr"></div>
+  <div class="footer">
+    All three approaches are registered as separate LangGraph tools — the LLM autonomously routes each question to the correct tool at runtime.<br>
+    Security: use a read-only MongoDB user · validate generated MQL before execution · block $where / $function operators
+  </div>
+</div>
+</body>
+</html>
